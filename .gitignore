@@ -1,0 +1,16 @@
+.env
+data/sent-offers.json
+data/settings.json
+data/activity.json
+data/delivery-audit.json
+data/users/
+data/users.json
+data/sessions.json
+data/auth-key
+data/whatsapp-session/
+data/*.lock
+data/*.log
+evolution/.env
+deploy/
+evolution/
+node_modules/

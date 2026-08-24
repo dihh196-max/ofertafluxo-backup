@@ -1,0 +1,22 @@
+# Exemplo inicial. Confirme campos, operação e assinatura no Open API Explorer da sua conta
+# antes de ativar o agendamento. O bot aceita o formato de resposta abaixo e variações comuns.
+query ProductOffers($page: Int!, $limit: Int!, $keyword: String) {
+  productOfferV2(page: $page, limit: $limit, keyword: $keyword, sortType: 1) {
+    nodes {
+      itemId
+      productName
+      offerLink
+      imageUrl
+      price
+      priceMin
+      priceMax
+      priceDiscountRate
+      commissionRate
+      commission
+      shopName
+      sales
+      ratingStar
+      productCatIds
+    }
+  }
+}
