@@ -29,7 +29,14 @@ export const videoScoutCategories = [
   {
     id: 'womens-clothing',
     label: 'Roupas femininas',
-    terms: ['vestido feminino', 'conjunto feminino', 'blusa feminina', 'short feminino', 'calça feminina', 'saia feminina', 'macacão feminino', 'moda feminina roupa'],
+    terms: [
+      'vestido feminino', 'vestido midi feminino', 'vestido casual feminino',
+      'conjunto feminino', 'conjunto feminino verão', 'conjunto social feminino',
+      'blusa feminina', 'cropped feminino', 'short feminino', 'short jeans feminino',
+      'calça feminina', 'calça wide leg feminina', 'saia feminina', 'saia midi feminina',
+      'macacão feminino', 'macaquinho feminino', 'body feminino', 'moda fitness feminina',
+      'pijama feminino', 'moda feminina roupa'
+    ],
     includeKeywords: ['vestido', 'conjunto', 'blusa', 'camisa', 'cropped', 'short', 'bermuda', 'calça', 'calca', 'saia', 'macacão', 'macacao', 'body', 'pijama', 'cardigan', 'casaco', 'jaqueta', 'top', 'legging', 'roupa feminina'],
     excludeKeywords: ['bolsa', 'mochila', 'sapato', 'tênis', 'tenis', 'sandália', 'sandalia', 'chinelo', 'sapatilha', 'bota', 'brinco', 'colar', 'pulseira', 'anel', 'óculos', 'oculos']
   }
@@ -71,7 +78,7 @@ export const viralSearchTerms = [
   'decoração funcional', 'utilidade doméstica', 'cama quarto'
 ];
 
-export const visualKeywords = ['elétrico', 'eletrica', 'automático', 'automatico', 'dobrável', 'dobravel', 'giratória', 'giratoria', 'magnético', 'magnetico', 'dispenser', 'seladora', 'cortador', 'pulverizador', 'escova'];
+export const visualKeywords = ['elétrico', 'eletrica', 'automático', 'automatico', 'dobrável', 'dobravel', 'giratória', 'giratoria', 'magnético', 'magnetico', 'dispenser', 'seladora', 'cortador', 'pulverizador', 'escova', 'viral', 'tendência', 'tendencia', 'lançamento', 'lancamento', 'novidade'];
 export const problemKeywords = ['organizador', 'limpeza', 'sujeira', 'mancha', 'anti', 'economiza', 'prático', 'pratico', 'vazamento', 'desentupidor', 'secagem'];
 export const beforeAfterKeywords = ['limpeza', 'mancha', 'organizador', 'organizadora', 'renova', 'transforma', 'remove', 'desengordurante', 'desentupidor'];
 export const organizationKeywords = ['organizador', 'gaveta', 'prateleira', 'cabide', 'cesto', 'suporte', 'porta', 'divisória', 'divisoria'];
@@ -95,6 +102,7 @@ export const defaultVideoScout = {
   minInstagramViralScore: 40,
   preferredPriceMax: 80,
   searchLimit: 50,
+  pagesPerTerm: 2,
   maxConcurrentSearches: 3,
   weights: {
     shopee: { similarity: 45, commission: 20, lowSales: 15, rating: 10, value: 10 },
@@ -137,6 +145,7 @@ export function normalizeVideoScout(input = {}, base = defaultVideoScout) {
     minInstagramViralScore: clamp(input.minInstagramViralScore ?? base.minInstagramViralScore, 0, 100, defaultVideoScout.minInstagramViralScore),
     preferredPriceMax: clamp(input.preferredPriceMax ?? base.preferredPriceMax, 1, 10_000, defaultVideoScout.preferredPriceMax),
     searchLimit: clamp(input.searchLimit ?? base.searchLimit, 10, 100, defaultVideoScout.searchLimit),
+    pagesPerTerm: clamp(input.pagesPerTerm ?? base.pagesPerTerm, 1, 3, defaultVideoScout.pagesPerTerm),
     maxConcurrentSearches: clamp(input.maxConcurrentSearches ?? base.maxConcurrentSearches, 1, 5, defaultVideoScout.maxConcurrentSearches),
     winnerProductName: String(input.winnerProductName ?? base.winnerProductName ?? '').trim().slice(0, 160),
     winnerProductId: String(input.winnerProductId ?? base.winnerProductId ?? '').trim().slice(0, 80),

@@ -59,7 +59,7 @@ test('busca geral aprova produtos de tipos diferentes quando atendem aos critér
 test('catálogo inclui roupas femininas como categoria independente e volumosa', () => {
   const category = videoScoutCategories.find(item => item.id === 'womens-clothing');
   assert.equal(category?.label, 'Roupas femininas');
-  assert.ok(category.terms.length >= 8);
+  assert.ok(category.terms.length >= 20);
   assert.ok(category.terms.includes('vestido feminino'));
   assert.ok(category.terms.includes('conjunto feminino'));
 });

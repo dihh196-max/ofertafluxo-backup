@@ -43,10 +43,15 @@ async function mapWithConcurrency(items, limit, mapper) {
 async function searchOffers(settings, terms, page) {
   // As consultas abrangem famílias amplas; a aprovação não depende de nicho.
   const queries = [...new Set(terms.map(term => term === null ? null : String(term).trim()).filter(term => term === null || term))];
-  const { results: lists, errors } = await mapWithConcurrency(queries, settings.videoScout.maxConcurrentSearches, async keyword => {
+  const pagesPerTerm = Math.max(1, Number(settings.videoScout.pagesPerTerm || 1));
+  const jobs = queries.flatMap(keyword => Array.from({ length: pagesPerTerm }, (_, offset) => ({
+    keyword,
+    page: ((Number(page) - 1 + offset) % 50) + 1
+  })));
+  const { results: lists, errors } = await mapWithConcurrency(jobs, settings.videoScout.maxConcurrentSearches, async ({ keyword, page: requestPage }) => {
     // O schema da Affiliate Open API suporta no máximo 50 por consulta. Vários
     // termos por categoria permitem reunir até 100+ candidatos sem excedê-lo.
-    const data = await getShopeeOffers(settings.shopee, { keyword, page, limit: 50 });
+    const data = await getShopeeOffers(settings.shopee, { keyword, page: requestPage, limit: 50 });
     return normalizeOffers(data);
   });
   const offers = unique(lists.flat());
@@ -190,9 +195,7 @@ export async function buildVideoCandidate(offer, channel, config, creatorResult 
   };
 }
 
-async function runSearch(settings, channel, catalog, page, knownIds, scanId) {
-  const terms = catalog.terms;
-  const allOffers = await searchOffers(settings, terms, page);
+async function runSearch(settings, channel, catalog, knownIds, scanId, allOffers) {
   // Algumas categorias, como roupas femininas, possuem critérios semânticos
   // próprios para não misturar acessórios e calçados na lista de vestuário.
   const catalogOffers = allOffers.filter(offer => belongsToCatalog(offer, catalog));
@@ -215,7 +218,8 @@ async function runSearch(settings, channel, catalog, page, knownIds, scanId) {
 
 export async function runVideoScout(settings, categoryId = '') {
   // Alterna páginas e nunca reapresenta um ID já salvo para o mesmo usuário.
-  const page = (Number(settings.videoScout.scanPage || 1) % 50) + 1;
+  const page = ((Number(settings.videoScout.scanPage || 1) - 1) % 50) + 1;
+  const nextPage = ((page - 1 + Math.max(1, Number(settings.videoScout.pagesPerTerm || 1))) % 50) + 1;
   const scanId = crypto.randomUUID();
   const knownIds = knownVideoCandidateIds(settings.userId);
   const selected = categoryId ? videoScoutCategories.filter(category => category.id === categoryId) : videoScoutCategories;
@@ -232,13 +236,16 @@ export async function runVideoScout(settings, categoryId = '') {
     // Ambos os canais devem avaliar o mesmo lote inédito. Antes, o primeiro
     // canal marcava os IDs como usados e deixava quase nada para o segundo.
     const existingBeforeCategory = new Set(knownIds);
-    const shopeeResult = await runSearch(settings, 'shopee', category, page, new Set(existingBeforeCategory), scanId);
-    const instagramResult = await runSearch(settings, 'instagram', category, page, new Set(existingBeforeCategory), scanId);
+    // A mesma coleta abastece os dois rankings. Isso dobra a variedade útil
+    // sem dobrar requisições à API nem aumentar o risco de limite de uso.
+    const allOffers = await searchOffers(settings, category.terms, page);
+    const shopeeResult = await runSearch(settings, 'shopee', category, new Set(existingBeforeCategory), scanId, allOffers);
+    const instagramResult = await runSearch(settings, 'instagram', category, new Set(existingBeforeCategory), scanId, allOffers);
     [...shopeeResult.newIds, ...instagramResult.newIds].forEach(id => knownIds.add(id));
     shopeeByCategory.push(shopeeResult);
     instagramByCategory.push(instagramResult);
   }
-  return { scanId, page, categoryId: categoryId || 'all', shopee: sum(shopeeByCategory, 'shopee'), instagram: sum(instagramByCategory, 'instagram'), categories: { shopee: shopeeByCategory, instagram: instagramByCategory } };
+  return { scanId, page, nextPage, categoryId: categoryId || 'all', shopee: sum(shopeeByCategory, 'shopee'), instagram: sum(instagramByCategory, 'instagram'), categories: { shopee: shopeeByCategory, instagram: instagramByCategory } };
 }
 
 export { videoScoutCategories };

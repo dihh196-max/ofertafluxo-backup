@@ -124,7 +124,7 @@ async function performVideoScout(user, origin = 'manual', categoryId = '') {
     const settings = appSettings(user);
     const result = await runVideoScout(settings, categoryId);
     const saved = loadSettings(base, user.id);
-    saved.videoScout = { ...saved.videoScout, lastRunAt: new Date().toISOString(), scanPage: result.page };
+    saved.videoScout = { ...saved.videoScout, lastRunAt: new Date().toISOString(), scanPage: result.nextPage };
     saveSettings(user.id, saved);
     saveLog(user, 'success', `[VIDEO SCOUT] Busca concluída (${categoryId || 'todas as categorias'}) — Shopee Video: ${result.shopee.stats.approved}/${result.shopee.stats.analyzed}; Instagram: ${result.instagram.stats.approved}/${result.instagram.stats.analyzed}.`, { origin, videoScout: result });
     return result;
