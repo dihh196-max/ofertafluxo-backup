@@ -15,6 +15,25 @@ function couponFrom(raw) {
   );
 }
 
+function timestamp(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed < 100_000_000_000 ? parsed * 1000 : parsed;
+  const fromDate = Date.parse(value);
+  return Number.isFinite(fromDate) ? fromDate : null;
+}
+
+function flashDetails(raw, forceFlash) {
+  const label = String(raw.offerName ?? raw.campaignName ?? raw.collectionName ?? raw.offerType ?? '').trim();
+  const explicitFlash = raw.isFlashSale === true || raw.flashSale === true || /flash|rel[aâ]mpag/i.test(`${label} ${raw.offerType ?? ''}`);
+  return {
+    flash: Boolean(forceFlash || explicitFlash),
+    campaignLabel: label,
+    flashStartsAt: timestamp(raw.periodStartTime ?? raw.startTime ?? raw.startAt),
+    flashEndsAt: timestamp(raw.periodEndTime ?? raw.endTime ?? raw.endAt)
+  };
+}
+
 function locateList(data) {
   if (Array.isArray(data)) return data;
   if (!data || typeof data !== 'object') return [];
@@ -26,7 +45,7 @@ function locateList(data) {
   return [];
 }
 
-export function normalizeOffers(data) {
+export function normalizeOffers(data, { flash = false } = {}) {
   return locateList(data).map(raw => {
     const price = number(raw.price ?? raw.priceMin ?? raw.priceInfo?.price);
     const suppliedOriginalPrice = number(raw.originalPrice ?? raw.priceBeforeDiscount ?? raw.priceInfo?.originalPrice);
@@ -58,9 +77,27 @@ export function normalizeOffers(data) {
       commission: raw.commission,
       commissionRate: number(raw.commissionRate),
       rating: number(raw.ratingStar),
-      couponCode: couponFrom(raw)
+      couponCode: couponFrom(raw),
+      ...flashDetails(raw, flash)
     };
   }).filter(offer => offer.id && offer.url && offer.price > 0);
+}
+
+export function activeFlashOffer(offer, now = Date.now()) {
+  if (!offer.flash) return false;
+  return (!offer.flashStartsAt || offer.flashStartsAt <= now) && (!offer.flashEndsAt || offer.flashEndsAt > now);
+}
+
+// A lista de produtos informa o início e o fim da oferta. Só classificamos
+// como relâmpago quando a janela é curta (até 24h) e está efetivamente ativa;
+// assim uma campanha longa não recebe um rótulo enganoso.
+export function markTimeLimitedFlash(offer, now = Date.now()) {
+  const start = offer.flashStartsAt;
+  const end = offer.flashEndsAt;
+  const maxWindow = 24 * 60 * 60 * 1000;
+  const active = (!start || start <= now) && end && end > now;
+  const shortWindow = start && end > start && end - start <= maxWindow;
+  return active && shortWindow ? { ...offer, flash: true } : offer;
 }
 
 export function selectOffers(offers, filters, sentIds) {
@@ -83,6 +120,11 @@ export function formatOffer(offer, campaign = null) {
   const discount = offer.discount ? `🔥 *${offer.discount}% OFF*\n` : '💥 *OFERTA ESPECIAL*\n';
   const savings = offer.originalPrice > offer.price ? `💰 Economia de ${brl(offer.originalPrice - offer.price)}\n` : '';
   const couponLine = offer.couponCode ? `\n🏷️ *USE O CUPOM:* \`${offer.couponCode}\`\n` : '';
-  const campaignLine = campaign ? `\n🏷️ *${campaign.label}*` : '';
-  return `🛍️ *${offer.title}*${before}\n\n${discount}${savings}❤️ *POR ${brl(offer.price)}*${couponLine}${campaignLine}\n\n🛒 *LINK PROMOCIONAL:* ${offer.url}\n\n⚠️ *Promoção sujeita à alteração de preço e estoque no site.*`;
+  const campaignLabel = offer.campaignLabel || campaign?.label;
+  const campaignLine = campaignLabel ? `\n🏷️ *${campaignLabel}*` : '';
+  const endsAt = offer.flashEndsAt ? new Date(offer.flashEndsAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  const flashHeader = offer.flash
+    ? `⚡ *OFERTA RELÂMPAGO SHOPEE* ⚡\n${endsAt ? `⏳ *Válida até ${endsAt}*\n` : '⏳ *Aproveite enquanto estiver disponível*\n'}\n`
+    : '';
+  return `${flashHeader}🛍️ *${offer.title}*${before}\n\n${discount}${savings}❤️ *POR ${brl(offer.price)}*${couponLine}${campaignLine}\n\n🛒 *LINK PROMOCIONAL:* ${offer.url}\n\n⚠️ *Promoção sujeita à alteração de preço e estoque no site.*`;
 }

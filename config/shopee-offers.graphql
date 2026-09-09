@@ -11,6 +11,8 @@ query ProductOffers($page: Int!, $limit: Int!, $keyword: String) {
       priceMin
       priceMax
       priceDiscountRate
+      periodStartTime
+      periodEndTime
       commissionRate
       commission
       shopName

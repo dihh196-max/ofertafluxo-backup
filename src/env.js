@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { videoScoutFromEnv } from './video-scout-config.js';
 
 export function loadEnv(file = '.env') {
   if (!fs.existsSync(file)) return;
@@ -25,7 +26,10 @@ export function config() {
       appId: process.env.SHOPEE_APP_ID,
       secret: process.env.SHOPEE_SECRET,
       extraHeaders,
-      queryPath: path.resolve(process.env.SHOPEE_QUERY_PATH || './config/shopee-offers.graphql')
+      queryPath: path.resolve(process.env.SHOPEE_QUERY_PATH || './config/shopee-offers.graphql'),
+      // A consulta de campanhas é separada para que uma alteração no schema
+      // da Shopee não interrompa a busca normal de produtos.
+      flashQueryPath: path.resolve(process.env.SHOPEE_FLASH_QUERY_PATH || './config/shopee-flash-offers.graphql')
     },
     filters: {
       minDiscount: Number(process.env.MIN_DISCOUNT_PERCENT || 0),
@@ -34,6 +38,7 @@ export function config() {
       maxOffers: Number(process.env.MAX_OFFERS_PER_RUN || 5),
       preferredMaxPrice: Number(process.env.PREFERRED_MAX_PRICE || 80)
     },
+    videoScout: videoScoutFromEnv(),
     whatsapp: {
       token: process.env.WHATSAPP_ACCESS_TOKEN,
       phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,

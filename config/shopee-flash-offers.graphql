@@ -1,0 +1,17 @@
+# Consulta opcional de campanhas ativas. Confirme esta operação no Open API
+# Explorer da conta Shopee antes de usá-la: permissões e nomes podem variar.
+query FlashOffers($page: Int!, $limit: Int!) {
+  shopeeOfferV2(page: $page, limit: $limit) {
+    nodes {
+      commissionRate
+      imageUrl
+      offerLink
+      offerName
+      offerType
+      categoryId
+      collectionId
+      periodStartTime
+      periodEndTime
+    }
+  }
+}

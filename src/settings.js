@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeSafety, safetyDefaults } from './safety.js';
+import { defaultVideoScout, normalizeVideoScout } from './video-scout-config.js';
 
 const userDir = userId => path.resolve('data/users', String(userId));
 const settingsPath = userId => path.join(userDir(userId), 'settings.json');
@@ -11,6 +12,7 @@ export const defaultSettings = {
   shopee: { appId: '', secret: '' },
   filters: { minDiscount: 15, minPrice: 0, maxPrice: 1000, maxOffers: 5, preferredMaxPrice: 80 },
   automation: { enabled: false, intervalMinutes: 60, lastRunAt: null, destinationSchedule: {} },
+  videoScout: defaultVideoScout,
   safety: safetyDefaults,
   destinations: [],
   evolution: { enabled: false, url: '', apiKey: '', instanceName: '' },
@@ -36,6 +38,7 @@ export function loadSettings(base, userId) {
     shopee: { appId: saved.shopee?.appId || '', secret: saved.shopee?.secret || '' },
     filters: { ...defaultSettings.filters, ...base.filters, ...saved.filters },
     automation: { ...defaultSettings.automation, ...saved.automation },
+    videoScout: normalizeVideoScout(saved.videoScout || {}, { ...defaultVideoScout, ...base.videoScout, weights: { ...defaultVideoScout.weights, ...base.videoScout?.weights } }),
     safety: normalizeSafety({ ...defaultSettings.safety, ...saved.safety }),
     evolution: { ...defaultSettings.evolution, ...base.evolution, ...saved.evolution },
     directWhatsApp: { ...defaultSettings.directWhatsApp, ...saved.directWhatsApp },
@@ -49,6 +52,7 @@ export function publicSettings(value) {
     shopee: { appId: value.shopee.appId ? `••••${value.shopee.appId.slice(-4)}` : '', connected: Boolean(value.shopee.appId && value.shopee.secret) },
     filters: value.filters,
     automation: value.automation,
+    videoScout: value.videoScout,
     safety: value.safety,
     destinations: value.destinations,
     evolution: { enabled: Boolean(value.evolution.enabled), configured: Boolean(value.evolution.url && value.evolution.apiKey && value.evolution.instanceName), instanceName: value.evolution.instanceName },

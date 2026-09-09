@@ -2,6 +2,9 @@ let state = {};
 const $ = selector => document.querySelector(selector);
 let panelKey = '';
 let stateRefreshInProgress = false;
+let videoChannel = 'shopee';
+let videoScanId = '';
+let videoCategoryId = '';
 const api = async (url, options = {}, retried = false) => {
   const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
   if (panelKey) headers['x-panel-key'] = panelKey;
@@ -22,11 +25,79 @@ function money(value) { return new Intl.NumberFormat('pt-BR', { style: 'currency
 function page(id) {
   document.querySelectorAll('.page').forEach(item => item.classList.toggle('active', item.id === id));
   document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item.dataset.page === id));
-  $('#page-title').textContent = ({ dashboard: 'Visão geral', offers: 'Ofertas', automation: 'Automação', destinations: 'Destinos', integration: 'Integrações' })[id];
+  $('#page-title').textContent = ({ dashboard: 'Visão geral', offers: 'Ofertas', 'video-scout': 'Produtos para Criar Vídeo', automation: 'Automação', destinations: 'Destinos', integration: 'Integrações' })[id];
+  if (id === 'video-scout') loadVideoCandidates().catch(error => toast(error.message, true));
+  if (id === 'destinations') refreshDirectGroups().catch(error => toast(error.message, true));
 }
 function renderActivity(items) {
   $('#activity').classList.toggle('empty', !items.length);
   $('#activity').innerHTML = items.length ? items.slice(0, 5).map(item => `<div class="activity-item"><span>${item.type === 'error' ? '⚠' : item.type === 'success' ? '✓' : '•'}</span><span>${item.message}</span><time>${new Date(item.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></div>`).join('') : 'Nenhuma atividade registrada.';
+}
+function score(value) { return Number(value || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }); }
+function creatorVideos(value) { return value === null || value === undefined ? 'UNKNOWN' : String(value); }
+function renderVideoSummary(summary = {}) {
+  $('#video-found-today').textContent = summary.foundToday || 0;
+  $('#video-shopee-new').textContent = summary.newShopee || 0;
+  $('#video-instagram-new').textContent = summary.newInstagram || 0;
+  $('#video-both').textContent = summary.both || 0;
+  $('#video-high-commission').textContent = `${score(summary.highestCommission)}%`;
+  $('#video-high-score').textContent = score(Math.max(summary.highestShopeeScore || 0, summary.highestInstagramScore || 0));
+}
+function videoFilters() {
+  const query = new URLSearchParams({ channel: videoChannel });
+  if (videoCategoryId) query.set('categoryId', videoCategoryId);
+  query.set('limit', '100');
+  if (videoScanId) query.set('scanId', videoScanId);
+  const fields = [
+    ['status', '#video-filter-status'], ['minScore', '#video-filter-score'], ['minCommission', '#video-filter-commission'],
+    ['maxSales', '#video-filter-sales'], ['creatorVideos', '#video-filter-creators']
+  ];
+  for (const [name, selector] of fields) {
+    const value = $(selector).value;
+    if (value !== '' && !(videoChannel === 'instagram' && name === 'maxSales')) query.set(name, value);
+  }
+  if ($('#video-filter-new').checked) query.set('onlyNew', 'true');
+  if ($('#video-filter-both').checked) query.set('onlyBoth', 'true');
+  return query;
+}
+function syncVideoChannelControls() {
+  const instagram = videoChannel === 'instagram';
+  const salesLabel = $('#video-filter-sales-label');
+  const salesInput = $('#video-filter-sales');
+  (salesLabel || salesInput.closest('label')).hidden = instagram;
+  salesInput.disabled = instagram;
+}
+function renderVideoCategoryControl() {
+  const anchor = $('#video-filter-status')?.closest('label');
+  if (!anchor) return;
+  if (!$('#video-filter-category')) anchor.insertAdjacentHTML('beforebegin', '<label>Categoria<select id="video-filter-category"></select></label>');
+  const select = $('#video-filter-category');
+  const categories = state.videoScoutCategories || [];
+  const previous = videoCategoryId || select.value;
+  select.innerHTML = `<option value="">Todas as categorias</option>${categories.map(category => `<option value="${escapeHtml(category.id)}">${escapeHtml(category.label)}</option>`).join('')}`;
+  select.value = categories.some(category => category.id === previous) ? previous : (categories[0]?.id || '');
+  videoCategoryId = select.value;
+}
+function candidateCard(candidate) {
+  const channelScore = videoChannel === 'instagram' ? candidate.instagram_viral_score : candidate.shopee_video_score;
+  const reasons = videoChannel === 'instagram' ? candidate.motivo_instagram : candidate.motivo_shopee_video;
+  const productUrl = candidate.product_url || candidate.affiliate_url;
+  const estimatedCommission = Number(candidate.preco_atual || 0) * Number(candidate.affiliate_commission_percent || 0) / 100;
+  const statusOptions = ['NOVO', 'SELECIONADO', 'EM_CRIACAO', 'VIDEO_CRIADO', 'PUBLICADO', 'IGNORADO', 'FORA_DO_CRITERIO']
+    .map(status => `<option ${status === candidate.status ? 'selected' : ''}>${status}</option>`).join('');
+  const image = candidate.imagem_url ? `<img src="${escapeHtml(candidate.imagem_url)}" alt="${escapeHtml(candidate.nome)}">` : '◈';
+  const openProduct = `<a class="video-product-link" href="${escapeHtml(productUrl)}" target="_blank" rel="noopener" title="Abrir produto na Shopee">`;
+  return `<article class="card video-candidate">${openProduct}<div class="video-candidate-image">${image}</div></a><div><h3>${openProduct}${escapeHtml(candidate.nome)}</a></h3><span class="video-status ${escapeHtml(candidate.status)}">${escapeHtml(candidate.status)}</span><div class="video-tags">${candidate.for_shopee_video ? '<span class="video-tag good">Shopee Video</span>' : ''}${candidate.for_instagram ? '<span class="video-tag good">Instagram</span>' : ''}<span class="video-tag good">Busca geral</span><span class="video-tag ${candidate.creator_video_count_status === 'UNKNOWN' ? 'warn' : ''}">Vídeos: ${creatorVideos(candidate.creator_video_count)}</span></div><p>Preço: <strong>${money(candidate.preco_atual)}</strong>${candidate.preco_original ? ` · <s>${money(candidate.preco_original)}</s>` : ''}${candidate.desconto_percentual ? ` · ${score(candidate.desconto_percentual)}% OFF` : ''}</p><p>Vendas: <strong>${score(candidate.sold_count)}</strong> · Comissão: <strong>${score(candidate.affiliate_commission_percent)}%</strong> · Avaliação: <strong>${candidate.rating ? score(candidate.rating) : 'UNKNOWN'}</strong></p>${videoChannel === 'shopee' ? `<p class="video-commission-value">Comissão estimada por venda: <strong>${money(estimatedCommission)}</strong> <small>(${score(candidate.affiliate_commission_percent)}% sobre ${money(candidate.preco_atual)})</small></p>` : ''}<p>Encontrado: ${candidate.first_seen_at ? new Date(candidate.first_seen_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</p></div><div><p><strong>${videoChannel === 'instagram' ? 'Instagram Viral Score' : 'Shopee Video Score'}: ${score(channelScore)}</strong></p>${videoChannel === 'shopee' ? `<p>Oportunidade geral: <strong>${score(candidate.similarity_score)}%</strong></p>` : ''}<ul class="video-reasons">${(reasons || []).slice(0, 6).map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><div class="video-actions"><a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener">Abrir na Shopee</a><a href="${escapeHtml(candidate.affiliate_url)}" target="_blank" rel="noopener">Link afiliado</a><select class="video-status-select" data-id="${escapeHtml(candidate.shopee_product_id)}">${statusOptions}</select><button class="secondary save-video-status" data-id="${escapeHtml(candidate.shopee_product_id)}">Alterar status</button></div></article>`;
+}
+async function loadVideoCandidates() {
+  const message = $('#video-candidates-message'); message.textContent = 'Carregando candidatos…';
+  const data = await api(`/api/video-candidates?${videoFilters().toString()}`);
+  renderVideoSummary(data.summary);
+  const rows = (data.candidates || []).slice(0, 100);
+  message.textContent = rows.length
+    ? `${rows.length} candidato(s) ${videoCategoryId ? 'na categoria selecionada' : 'em todas as categorias'} ${videoScanId ? 'novo(s) nesta garimpagem' : 'nesta visualização'} (máximo de 100 por categoria).`
+    : videoScanId ? 'Nenhum produto inédito foi encontrado nesta rodada; a próxima busca consultará outra página.' : 'Nenhum candidato encontrado com os filtros atuais.';
+  $('#video-candidates').innerHTML = rows.map(candidateCard).join('');
 }
 function renderDestinations() {
   const list = $('#destinations-list'); const destinations = state.destinations || [];
@@ -47,7 +118,28 @@ function renderDestinations() {
   list.classList.toggle('empty', !destinations.length);
   list.innerHTML = destinations.length ? destinations.map(item => `<article class="destination"><div class="avatar">${item.type === 'group' ? '♧' : '◔'}</div><div><strong>${escapeHtml(item.name)}</strong><small>${item.type === 'group' ? escapeHtml(item.number) : `+${escapeHtml(item.number)}`} · ${escapeHtml(categoryName(item.categoryId))}${automationNote(item)}</small></div><select class="destination-category" title="Categoria deste destino" data-id="${item.id}">${categoryOptions(item.categoryId)}</select><span class="tag ${item.active ? '' : 'off'}">${item.active ? 'Ativo' : 'Pausado'}</span><button class="icon-button toggle-destination" title="Ativar ou pausar" data-id="${item.id}">⏻</button><button class="icon-button delete-destination" title="Remover" data-id="${item.id}">⌫</button></article>`).join('') : 'Nenhum destino configurado.';
   const groups = state.directStatus?.groups || [];
-  $('#groups-helper').innerHTML = groups.length ? `<h3>Grupos que este WhatsApp administra</h3><p class="form-note">Apenas grupos em que o número conectado é administrador aparecem aqui.</p>${groups.map(group => `<article class="group-picker"><div><strong>${escapeHtml(group.subject)}</strong><small>${escapeHtml(group.id)}</small></div><button class="secondary select-group" data-id="${escapeHtml(group.id)}" data-name="${escapeHtml(group.subject)}">Usar este grupo</button></article>`).join('')}` : '';
+  const directConnected = state.directStatus?.status === 'conectado';
+  $('#groups-helper').innerHTML = groups.length
+    ? `<h3>Grupos que este WhatsApp administra</h3><p class="form-note">Apenas grupos em que o número conectado é administrador aparecem aqui.</p>${groups.map(group => `<article class="group-picker"><div><strong>${escapeHtml(group.subject)}</strong><small>${escapeHtml(group.id)}</small></div><button class="secondary select-group" data-id="${escapeHtml(group.id)}" data-name="${escapeHtml(group.subject)}">Usar este grupo</button></article>`).join('')}`
+    : `<p class="form-note">${directConnected ? 'Atualizando grupos administrados… Se a lista continuar vazia, confirme que este número é administrador dos grupos.' : 'Conecte o WhatsApp para carregar automaticamente os grupos que este número administra.'}</p>`;
+  syncDestinationGroupChoices();
+}
+function syncDestinationGroupChoices() {
+  const select = $('#destination-authorial-group');
+  if (!select) return;
+  const groups = state.directStatus?.groups || [];
+  select.innerHTML = `<option value="">Selecione um grupo administrado</option>${groups.map(group => `<option value="${escapeHtml(group.id)}" data-subject="${escapeHtml(group.subject)}">${escapeHtml(group.subject)}</option>`).join('')}`;
+  const type = $('#destination-type')?.value;
+  const usePicker = type === 'group' && groups.length > 0;
+  $('#destination-authorial-group-row').hidden = !usePicker;
+  $('#destination-manual-fields').hidden = usePicker;
+  $('#destination-manual-help').hidden = !(type === 'group' && !groups.length);
+}
+async function refreshDirectGroups() {
+  const direct = await api('/api/whatsapp-direct/groups');
+  state.directStatus = { ...(state.directStatus || {}), ...direct };
+  renderDestinations();
+  return direct;
 }
 function escapeHtml(value) { return String(value || '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
 function renderState() {
@@ -82,6 +174,14 @@ function renderState() {
   $('#safety-quiet-start').value = safety.quietStartHour ?? 22;
   $('#safety-quiet-end').value = safety.quietEndHour ?? 8;
   $('#safety-copy').textContent = `${safety.sentLastHour || 0}/${safety.maxPerHour || 12} envios na última hora · ${safety.sentToday || 0}/${safety.maxPerDay || 48} hoje${safety.automationWindowOpen === false ? ' · descanso ativo' : ''}.`;
+  const videoScout = state.videoScout || {};
+  $('#video-scout-enabled').checked = Boolean(videoScout.enabled);
+  $('#video-scout-interval').value = videoScout.intervalMinutes || 60;
+  $('#video-max-sales').value = videoScout.maxSales ?? 20;
+  $('#video-min-commission').value = videoScout.minCommissionPercent ?? 10;
+  $('#video-min-instagram-score').value = videoScout.minInstagramViralScore ?? 40;
+  renderVideoCategoryControl();
+  renderVideoSummary(state.videoScoutSummary || {});
   renderDestinations(); renderActivity(state.activity || []);
 }
 async function reload() {
@@ -116,7 +216,7 @@ async function loadOffers() {
   try {
     const { offers, category } = await api('/api/offers/preview', { method: 'POST', body: JSON.stringify({ categoryId: $('#preview-category').value }) });
     $('#offers-message').textContent = offers.length ? `${offers.length} ofertas encontradas em ${category}.` : `Nenhuma oferta encontrada em ${category}.`;
-    $('#offers-grid').innerHTML = offers.map(offer => `<article class="card offer"><div class="offer-img">${offer.image ? `<img src="${escapeHtml(offer.image)}" alt="">` : '◈'}</div><div class="offer-info"><h3>${escapeHtml(offer.title)}</h3><div class="offer-price">${money(offer.price)}</div><div class="offer-meta"><span>${offer.shop ? escapeHtml(offer.shop) : 'Shopee'}</span><span>${offer.sales ? `${offer.sales} vendidos` : 'Sem vendas'}</span></div><div class="commission">Comissão: ${(Number(offer.commissionRate || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</div><a href="${escapeHtml(offer.url)}" target="_blank" rel="noopener">Ver oferta →</a></div></article>`).join('');
+    $('#offers-grid').innerHTML = offers.map(offer => `<article class="card offer"><div class="offer-img">${offer.image ? `<img src="${escapeHtml(offer.image)}" alt="">` : '◈'}</div><div class="offer-info">${offer.flash ? '<div class="flash-badge">⚡ Oferta relâmpago</div>' : ''}<h3>${escapeHtml(offer.title)}</h3><div class="offer-price">${money(offer.price)}</div><div class="offer-meta"><span>${offer.shop ? escapeHtml(offer.shop) : 'Shopee'}</span><span>${offer.sales ? `${offer.sales} vendidos` : 'Sem vendas'}</span></div><div class="commission">Comissão: ${(Number(offer.commissionRate || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</div><a href="${escapeHtml(offer.url)}" target="_blank" rel="noopener">Ver oferta →</a></div></article>`).join('');
     await reload();
   } catch (error) { $('#offers-message').textContent = error.message; toast(error.message, true); }
   finally { button.disabled = false; button.textContent = 'Buscar ofertas'; }
@@ -124,19 +224,38 @@ async function loadOffers() {
 document.addEventListener('click', async event => {
   const nav = event.target.closest('.nav'); if (nav) return page(nav.dataset.page);
   const go = event.target.closest('[data-go]'); if (go) return page(go.dataset.go);
+  const videoTab = event.target.closest('[data-video-channel]');
+  if (videoTab) {
+    videoChannel = videoTab.dataset.videoChannel;
+    document.querySelectorAll('[data-video-channel]').forEach(button => button.classList.toggle('active', button.dataset.videoChannel === videoChannel));
+    syncVideoChannelControls();
+    return loadVideoCandidates().catch(error => toast(error.message, true));
+  }
   if (event.target.closest('#open-shopee')) return openShopee();
   if (event.target.closest('#open-whatsapp')) return $('#whatsapp-dialog').showModal();
   if (event.target.closest('#open-evolution')) return $('#evolution-dialog').showModal();
-  if (event.target.closest('#new-destination')) return $('#destination-dialog').showModal();
+  if (event.target.closest('#new-destination')) {
+    try { await refreshDirectGroups(); } catch (error) { toast(error.message, true); }
+    $('#destination-type').value = 'group'; syncDestinationGroupChoices(); $('#destination-dialog').showModal(); return;
+  }
   const group = event.target.closest('.select-group');
-  if (group) { $('#destination-type').value = 'group'; $('#destination-name').value = group.dataset.name; $('#destination-number').value = group.dataset.id; $('#destination-number-label').firstChild.textContent = 'ID do grupo (…@g.us)'; $('#destination-dialog').showModal(); return; }
+  if (group) { $('#destination-type').value = 'group'; syncDestinationGroupChoices(); $('#destination-authorial-group').value = group.dataset.id; $('#destination-name').value = group.dataset.name; $('#destination-number').value = group.dataset.id; $('#destination-dialog').showModal(); return; }
   if (event.target.closest('.close')) return event.target.closest('dialog').close();
   const toggle = event.target.closest('.toggle-destination');
   if (toggle) { try { await api(`/api/destinations/${toggle.dataset.id}`, { method: 'PATCH', body: '{}' }); await reload(); } catch (error) { toast(error.message, true); } }
   const remove = event.target.closest('.delete-destination');
   if (remove && confirm('Remover este destino?')) { try { await api(`/api/destinations/${remove.dataset.id}`, { method: 'DELETE' }); await reload(); } catch (error) { toast(error.message, true); } }
+  const statusButton = event.target.closest('.save-video-status');
+  if (statusButton) {
+    const select = document.querySelector(`.video-status-select[data-id="${CSS.escape(statusButton.dataset.id)}"]`);
+    try { const updated = await api(`/api/video-candidates/${encodeURIComponent(statusButton.dataset.id)}`, { method: 'PATCH', body: JSON.stringify({ status: select.value }) }); await loadVideoCandidates(); await reload(); toast(`Status salvo: ${updated.status}.`); } catch (error) { toast(error.message, true); }
+  }
 });
 document.addEventListener('change', async event => {
+  if (event.target.matches('#video-filter-category')) {
+    videoCategoryId = event.target.value; videoScanId = '';
+    return loadVideoCandidates().catch(error => toast(error.message, true));
+  }
   const category = event.target.closest('.destination-category');
   if (!category) return;
   try {
@@ -155,24 +274,43 @@ $('#save-whatsapp').addEventListener('click', async () => { try {
 } catch (error) { toast(error.message, true); } });
 async function updateDirectStatus() {
   const status = await api('/api/whatsapp-direct/status');
-  $('#direct-status').textContent = status.error || (status.status === 'aguardando_qr' ? 'Aguardando leitura do QR Code…' : status.status);
-  $('#direct-qr').innerHTML = status.qr ? `<img src="${status.qr}" alt="QR Code do WhatsApp">` : status.status === 'conectado' ? '✓ WhatsApp conectado com sucesso.' : status.error ? 'Não foi possível gerar o QR Code. Clique em “Gerar QR Code” para tentar novamente.' : 'Gerando QR Code…';
+  $('#direct-status').textContent = status.pairing
+    ? 'QR Code lido. Finalizando a conexão…'
+    : status.error || (status.status === 'aguardando_qr' ? 'Aguardando leitura do QR Code…' : status.status);
+  $('#direct-qr').innerHTML = status.qr
+    ? `<img src="${status.qr}" alt="QR Code do WhatsApp">`
+    : status.status === 'conectado'
+      ? '✓ WhatsApp conectado com sucesso.'
+      : status.pairing
+        ? '✓ QR Code lido. Aguarde alguns segundos para concluir.'
+        : status.error
+          ? 'Não foi possível concluir a conexão. Clique em “Gerar QR Code” para tentar novamente.'
+          : 'Gerando QR Code…';
   if (status.status === 'aguardando_qr' || status.status === 'conectando') setTimeout(updateDirectStatus, 1800);
   await reload();
 }
 $('#start-direct').addEventListener('click', async () => { try {
   $('#direct-status').textContent = 'Iniciando conexão…';
-  await api('/api/whatsapp-direct/connect', { method: 'POST', body: '{}' });
+  await api('/api/whatsapp-direct/connect', { method: 'POST', body: JSON.stringify({ forceNewQr: true }) });
   setTimeout(updateDirectStatus, 900);
 } catch (error) { toast(error.message, true); } });
 $('#save-destination').addEventListener('click', async () => { try {
-  await api('/api/destinations', { method: 'POST', body: JSON.stringify({ name: $('#destination-name').value, number: $('#destination-number').value, type: $('#destination-type').value, categoryId: $('#destination-category').value, consent: $('#destination-consent').checked }) });
+  const type = $('#destination-type').value;
+  const selectedGroup = $('#destination-authorial-group');
+  const option = selectedGroup.options[selectedGroup.selectedIndex];
+  const groupSelected = type === 'group' && selectedGroup.value;
+  await api('/api/destinations', { method: 'POST', body: JSON.stringify({ name: groupSelected ? option.dataset.subject : $('#destination-name').value, number: groupSelected ? selectedGroup.value : $('#destination-number').value, type, categoryId: $('#destination-category').value, consent: $('#destination-consent').checked }) });
   $('#destination-dialog').close(); $('#destination-name').value = ''; $('#destination-number').value = ''; $('#destination-category').value = 'all'; $('#destination-consent').checked = false; await reload(); toast('Destino adicionado.');
 } catch (error) { toast(error.message, true); } });
 $('#destination-type').addEventListener('change', () => {
   const group = $('#destination-type').value === 'group';
   $('#destination-number-label').firstChild.textContent = group ? 'ID do grupo (…@g.us)' : 'Número com DDI';
   $('#destination-number').placeholder = group ? '120363…@g.us' : '5511999999999';
+  syncDestinationGroupChoices();
+});
+$('#destination-authorial-group').addEventListener('change', event => {
+  const option = event.currentTarget.options[event.currentTarget.selectedIndex];
+  if (option?.value) { $('#destination-name').value = option.dataset.subject || ''; $('#destination-number').value = option.value; }
 });
 $('#save-automation').addEventListener('click', async () => { try {
   await api('/api/automation', { method: 'POST', body: JSON.stringify({ enabled: $('#automation-enabled').checked, intervalMinutes: $('#automation-interval').value }) });
@@ -182,6 +320,18 @@ $('#save-safety').addEventListener('click', async () => { try {
   await api('/api/safety', { method: 'POST', body: JSON.stringify({ maxPerHour: $('#safety-hour').value, maxPerDay: $('#safety-day').value, minMinutesPerDestination: $('#safety-group-minutes').value, quietStartHour: $('#safety-quiet-start').value, quietEndHour: $('#safety-quiet-end').value }) });
   await reload(); toast('Proteções de envio atualizadas.');
 } catch (error) { toast(error.message, true); } });
+$('#save-video-config').addEventListener('click', async () => { try {
+  await api('/api/video-scout/config', { method: 'POST', body: JSON.stringify({ enabled: $('#video-scout-enabled').checked, intervalMinutes: $('#video-scout-interval').value, maxSales: $('#video-max-sales').value, minCommissionPercent: $('#video-min-commission').value, minInstagramViralScore: $('#video-min-instagram-score').value }) });
+  await reload(); toast('Configuração do Video Scout salva.');
+} catch (error) { toast(error.message, true); } });
+$('#scan-video-scout').addEventListener('click', async event => { try {
+  const button = event.currentTarget; button.disabled = true; button.textContent = 'Garimpando…';
+  const result = await api('/api/video-scout/scan', { method: 'POST', body: JSON.stringify({ categoryId: videoCategoryId }) });
+  videoScanId = result.scanId || '';
+  toast(`Garimpo concluído: ${result.shopee.stats.approved} Shopee Video e ${result.instagram.stats.approved} Instagram inéditos.`);
+  await reload(); await loadVideoCandidates();
+} catch (error) { toast(error.message, true); } finally { event.currentTarget.disabled = false; event.currentTarget.textContent = 'Buscar candidatos agora'; } });
+$('#apply-video-filters').addEventListener('click', () => loadVideoCandidates().catch(error => toast(error.message, true)));
 $('#run-now').addEventListener('click', async () => { try { const result = await api('/api/test-send', { method: 'POST', body: '{}' }); toast(`${result.found} oferta de teste enviada.`); await reload(); } catch (error) { toast(error.message, true); await reload(); } });
 $('#open-account').addEventListener('click', async () => { try {
   $('#account-dialog').showModal(); $('#account-user').textContent = state.user?.username || '';
@@ -194,6 +344,7 @@ $('#start-2fa').addEventListener('click', async () => { try { const data = await
 $('#confirm-2fa').addEventListener('click', async () => { try { await api('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code: $('#two-factor-code').value }) }); $('#two-factor-setup').hidden = true; await reload(); toast('2 fatores ativado.'); } catch (error) { toast(error.message, true); } });
 $('#disable-2fa').addEventListener('click', async () => { const code = window.prompt('Digite o código atual do autenticador para desativar:'); if (!code) return; try { await api('/api/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) }); await reload(); toast('2 fatores desativado.'); } catch (error) { toast(error.message, true); } });
 $('#logout').addEventListener('click', async () => { try { await api('/api/auth/logout', { method: 'POST', body: '{}' }); window.location.href = '/login.html'; } catch (error) { toast(error.message, true); } });
+syncVideoChannelControls();
 reload().catch(error => toast(error.message, true));
 setInterval(() => { if (state.automation?.enabled) renderDestinations(); }, 30_000);
 // Mantém métricas, próximos envios, grupos e atividades atualizados sem F5.

@@ -5,11 +5,11 @@ function signature(appId, timestamp, body, secret) {
   return crypto.createHash('sha256').update(`${appId}${timestamp}${body}${secret}`).digest('hex');
 }
 
-export async function getShopeeOffers(settings, variables = {}, fetcher = fetch) {
+async function queryShopee(settings, queryPath, variables = {}, fetcher = fetch) {
   if (!settings.url || !settings.appId || !settings.secret) {
     throw new Error('Configure SHOPEE_API_URL, SHOPEE_APP_ID e SHOPEE_SECRET.');
   }
-  const query = fs.readFileSync(settings.queryPath, 'utf8');
+  const query = fs.readFileSync(queryPath, 'utf8');
   // A assinatura é calculada sobre exatamente a mesma string enviada no corpo.
   const body = JSON.stringify({ query, variables: { page: 1, limit: 50, keyword: null, ...variables } });
   const timestamp = Math.floor(Date.now() / 1000);
@@ -28,4 +28,15 @@ export async function getShopeeOffers(settings, variables = {}, fetcher = fetch)
     throw new Error(`Shopee recusou a consulta: ${JSON.stringify(result.errors || result)}`);
   }
   return result.data;
+}
+
+export function getShopeeOffers(settings, variables = {}, fetcher = fetch) {
+  return queryShopee(settings, settings.queryPath, variables, fetcher);
+}
+
+// A lista de ofertas relâmpago usa uma query independente. Caso a conta ainda
+// não tenha esse recurso liberado no Open API Explorer, o chamador continua
+// enviando as ofertas normais sem parar a automação.
+export function getShopeeFlashOffers(settings, variables = {}, fetcher = fetch) {
+  return queryShopee(settings, settings.flashQueryPath, variables, fetcher);
 }

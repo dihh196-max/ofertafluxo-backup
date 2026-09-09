@@ -1,5 +1,5 @@
 import { getShopeeOffers } from './shopee.js';
-import { formatOffer, normalizeOffers, selectOffers } from './offers.js';
+import { formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers } from './offers.js';
 import { readSentIds, rememberSent } from './store.js';
 import { sendWhatsAppOffer } from './whatsapp.js';
 import { sendEvolutionOffer } from './evolution.js';
@@ -44,12 +44,21 @@ export async function run(settings, destinationIds = null) {
   const campaign = currentShopeeCampaign();
   const jobs = destinations.map(async destination => {
     const category = categoryById(destination.categoryId);
-    const selected = selectOffers(
-      await offersForCategory(category),
-      { ...settings.filters, maxOffers: 1 },
-      readSentIds(settings.userId, destination.id)
-    );
-    const offer = selected[0];
+    const sentIds = readSentIds(settings.userId, destination.id);
+    // Os horários oficiais do próprio produto são a única fonte usada para
+    // marcar uma oferta relâmpago. A API de campanhas é uma landing page e
+    // não fornece preço por item, portanto não é usada para inventar preços.
+    const categorizedOffers = (await offersForCategory(category)).map(markTimeLimitedFlash);
+    const flashOffers = categorizedOffers.filter(item => item.flash);
+    const flashIds = new Set(flashOffers.map(item => item.id));
+    const normalOffers = categorizedOffers.filter(item => !flashIds.has(item.id));
+    const preferredKind = destination.nextOfferKind === 'normal' ? 'normal' : 'flash';
+    const pick = list => selectOffers(list, { ...settings.filters, maxOffers: 1 }, sentIds)[0];
+    // A alternância é por grupo. Se não existir relâmpago válida no nicho,
+    // envia a normal disponível e tenta uma relâmpago novamente na próxima vez.
+    const preferred = preferredKind === 'flash' ? flashOffers : normalOffers;
+    const fallback = preferredKind === 'flash' ? normalOffers : flashOffers;
+    const offer = pick(preferred) || pick(fallback);
     if (!offer) return null;
     const text = formatOffer(offer, campaign);
     const reservation = reserveDelivery(settings.userId, destination, settings.safety);
@@ -64,7 +73,7 @@ export async function run(settings, destinationIds = null) {
       failDelivery(settings.userId, reservation, error);
       throw error;
     }
-    return { offer, destinationId: destination.id, destinationName: destination.name, categoryId: category.id, category: category.label };
+    return { offer, offerKind: offer.flash ? 'flash' : 'normal', destinationId: destination.id, destinationName: destination.name, categoryId: category.id, category: category.label };
   });
   const settled = await Promise.allSettled(jobs);
   const sent = settled.filter(result => result.status === 'fulfilled' && result.value).map(result => result.value);
@@ -77,6 +86,6 @@ export async function run(settings, destinationIds = null) {
     found: sent.length,
     campaign: campaign?.label || null,
     errors,
-    offers: sent.map(({ offer, destinationName, category }) => ({ id: offer.id, title: offer.title, price: offer.price, discount: offer.discount, destinationName, category }))
+    offers: sent.map(({ offer, offerKind, destinationName, category }) => ({ id: offer.id, title: offer.title, price: offer.price, discount: offer.discount, offerKind, destinationName, category }))
   };
 }

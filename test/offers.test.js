@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatOffer, normalizeOffers, selectOffers } from '../src/offers.js';
+import { activeFlashOffer, formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers } from '../src/offers.js';
 import { categoryById, matchesCategory } from '../src/categories.js';
 import { automationWindowOpen, normalizeSafety } from '../src/safety.js';
 import { createDestinationSchedule, nextDueDestination, scheduleAfterRun } from '../src/automation-schedule.js';
@@ -34,6 +34,25 @@ test('exibe preço anterior riscado ao receber percentual oficial de desconto', 
   assert.match(formatOffer(offer), /POR R\$\s?70,00/);
 });
 
+test('destaca oferta relâmpago ativa com a validade fornecida pela Shopee', () => {
+  const [offer] = normalizeOffers({ shopeeOfferV2: { nodes: [
+    { itemId: 7, productName: 'Vestido', offerLink: 'https://s.shopee.com.br/flash', price: 59.9, priceDiscountRate: 40, offerName: 'Flash Sale', periodEndTime: 1_900_000_000 }
+  ] } }, { flash: true });
+  assert.equal(activeFlashOffer(offer, Date.parse('2026-08-25T00:00:00Z')), true);
+  assert.match(formatOffer(offer), /OFERTA RELÂMPAGO SHOPEE/);
+  assert.match(formatOffer(offer), /Válida até/);
+});
+
+test('classifica como relâmpago apenas uma janela curta e ativa informada no produto', () => {
+  const [offer] = normalizeOffers({ productOfferV2: { nodes: [
+    { itemId: 8, productName: 'Short', offerLink: 'https://s.shopee.com.br/flash-short', price: 29.9, periodStartTime: 1_788_048_000, periodEndTime: 1_788_091_200 }
+  ] } });
+  const flash = markTimeLimitedFlash(offer, 1_788_060_000_000);
+  assert.equal(flash.flash, true);
+  const longCampaign = markTimeLimitedFlash({ ...offer, flashStartsAt: 1_788_048_000_000, flashEndsAt: 1_788_048_000_000 + 48 * 60 * 60_000 }, 1_788_050_000_000);
+  assert.equal(longCampaign.flash, false);
+});
+
 test('prioriza comissão e reconhece categorias sem confundir palavras parciais', () => {
   const offers = normalizeOffers({ productOfferV2: { nodes: [
     { itemId: 1, productName: 'Fone bluetooth premium', offerLink: 'https://s.shopee.com.br/a', price: 80, commissionRate: 0.2, ratingStar: 4.9 },
@@ -56,6 +75,18 @@ test('separa acessórios, moda masculina e moda feminina', () => {
   assert.equal(matchesCategory(male, categoryById('fashion-men')), true);
   assert.equal(matchesCategory(female, categoryById('fashion-women')), true);
   assert.equal(matchesCategory(female, categoryById('fashion-men')), false);
+});
+
+test('segmenta ferramentas e churrasco sem misturar brinquedos', () => {
+  const [furadeira, churrasqueira, brinquedo] = normalizeOffers({ productOfferV2: { nodes: [
+    { itemId: 13, productName: 'Furadeira e parafusadeira sem fio', offerLink: 'https://s.shopee.com.br/13', price: 120 },
+    { itemId: 14, productName: 'Kit churrasco com faca e garfo', offerLink: 'https://s.shopee.com.br/14', price: 55 },
+    { itemId: 15, productName: 'Brinquedo miniatura kit ferramentas infantil', offerLink: 'https://s.shopee.com.br/15', price: 25 }
+  ] } });
+  const category = categoryById('tools-bbq');
+  assert.equal(matchesCategory(furadeira, category), true);
+  assert.equal(matchesCategory(churrasqueira, category), true);
+  assert.equal(matchesCategory(brinquedo, category), false);
 });
 
 test('moda feminina aceita roupas e exclui bolsas e calçados', () => {

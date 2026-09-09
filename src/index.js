@@ -4,22 +4,27 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { loadEnv, config } from './env.js';
 import { getShopeeOffers } from './shopee.js';
-import { normalizeOffers, selectOffers } from './offers.js';
+import { markTimeLimitedFlash, normalizeOffers, selectOffers } from './offers.js';
 import { matchesCategory } from './categories.js';
 import { run } from './run.js';
 import { activity, addActivity, loadSettings, migrateLegacySettings, newDestination, publicSettings, saveSettings } from './settings.js';
-import { connectDirectWhatsApp, directSessionExists, directWhatsAppState } from './whatsapp-direct.js';
+import { connectDirectWhatsApp, directSessionExists, directWhatsAppState, refreshDirectWhatsAppGroups } from './whatsapp-direct.js';
 import { categories, categoryById } from './categories.js';
 import { currentShopeeCampaign } from './campaigns.js';
 import { automationWindowOpen, normalizeSafety, safetySummary } from './safety.js';
 import { allUsers, beginLogin, destroySession, disableTwoFactor, enableTwoFactor, finishTwoFactor, listUsers, registerUser, setupTwoFactor, userById, userFromSession, usersCount } from './auth.js';
 import { createDestinationSchedule, nextDueDestination, refreshDestinationSchedule, scheduleAfterRun, scheduleRetry, scheduleStatus } from './automation-schedule.js';
+import { listVideoCandidates, updateVideoCandidateStatus, videoCandidateSummary } from './video-candidate-store.js';
+import { runVideoScout } from './video-scout.js';
+import { normalizeVideoScout, videoScoutCategories } from './video-scout-config.js';
 
 loadEnv();
 const base = config();
 const publicDir = path.resolve('public');
 let running = false;
 let timer;
+let videoScoutTimer;
+const videoScoutRunning = new Set();
 const localHosts = new Set(['127.0.0.1', 'localhost', '::1']);
 const externallyHosted = base.allowedOrigins.some(origin => origin.startsWith('https://'));
 if (!localHosts.has(base.host) && (base.panelAccessKey.length < 24 || !base.allowedOrigins.length)) {
@@ -36,6 +41,7 @@ function appSettings(user) {
     evolution: { ...saved.evolution, targets: saved.destinations.filter(d => d.active).map(d => d.number) },
     directWhatsApp: { ...saved.directWhatsApp, targets: saved.destinations.filter(d => d.active).map(d => d.number) },
     automation: saved.automation,
+    videoScout: saved.videoScout,
     safety: saved.safety,
     destinations: saved.destinations,
     userId: user.id
@@ -96,12 +102,36 @@ async function performRun(user, origin = 'manual', destinationIds = null) {
     settings.origin = origin;
     if (origin === 'automático' || origin === 'teste') settings.filters = { ...settings.filters, maxOffers: 1 };
     const result = await run(settings, destinationIds);
+    if (result.offers?.length) {
+      const saved = loadSettings(base, user.id);
+      for (const sent of result.offers) {
+        const destination = saved.destinations.find(item => item.id === sent.destinationId);
+        if (destination) destination.nextOfferKind = sent.offerKind === 'flash' ? 'normal' : 'flash';
+      }
+      saveSettings(user.id, saved);
+    }
     saveLog(user, 'success', `${result.found} oferta(s) enviada(s)`, { origin, ...result });
     return result;
   } catch (error) {
     saveLog(user, 'error', error.message, { origin });
     throw error;
   } finally { running = false; }
+}
+async function performVideoScout(user, origin = 'manual', categoryId = '') {
+  if (videoScoutRunning.has(user.id)) throw new Error('A busca de produtos para vídeo já está em andamento.');
+  videoScoutRunning.add(user.id);
+  try {
+    const settings = appSettings(user);
+    const result = await runVideoScout(settings, categoryId);
+    const saved = loadSettings(base, user.id);
+    saved.videoScout = { ...saved.videoScout, lastRunAt: new Date().toISOString(), scanPage: result.page };
+    saveSettings(user.id, saved);
+    saveLog(user, 'success', `[VIDEO SCOUT] Busca concluída (${categoryId || 'todas as categorias'}) — Shopee Video: ${result.shopee.stats.approved}/${result.shopee.stats.analyzed}; Instagram: ${result.instagram.stats.approved}/${result.instagram.stats.analyzed}.`, { origin, videoScout: result });
+    return result;
+  } catch (error) {
+    saveLog(user, 'error', `[VIDEO SCOUT] ${error.message}`, { origin });
+    throw error;
+  } finally { videoScoutRunning.delete(user.id); }
 }
 function schedule() {
   clearInterval(timer);
@@ -151,6 +181,21 @@ function schedule() {
   checkSchedules();
   timer = setInterval(checkSchedules, 30_000);
 }
+function scheduleVideoScout() {
+  clearInterval(videoScoutTimer);
+  const check = () => {
+    const now = Date.now();
+    for (const user of allUsers()) {
+      const saved = loadSettings(base, user.id); const scout = saved.videoScout;
+      if (!scout.enabled || videoScoutRunning.has(user.id)) continue;
+      const last = Date.parse(scout.lastRunAt || '');
+      if (Number.isFinite(last) && now - last < scout.intervalMinutes * 60_000) continue;
+      performVideoScout(user, 'automático').catch(() => {});
+    }
+  };
+  check();
+  videoScoutTimer = setInterval(check, 60_000);
+}
 function automationStatus(user, settings, now = Date.now()) {
   const destinationSchedule = refreshDestinationSchedule(settings.automation, settings.destinations, now);
   const destinations = scheduleStatus(settings.destinations, { ...settings.automation, destinationSchedule }, now);
@@ -193,10 +238,10 @@ http.createServer(async (request, response) => {
       return json(response, 401, { error: 'Chave de acesso do painel necessária.' });
     }
     if (isPanelApi && base.panelAccessKey && panelHeaderAuthorized(request)) response.setHeader('set-cookie', panelAccessCookie());
-    if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, { ok: true, running });
+    if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, { ok: true, running, videoScoutRunning: videoScoutRunning.size });
     if (request.method === 'GET' && url.pathname === '/api/auth/meta') return json(response, 200, { usersCount: usersCount(), limit: 3 });
     if (request.method === 'POST' && url.pathname === '/api/auth/register') {
-      const before = usersCount(); const user = registerUser(await readBody(request)); if (before === 0) migrateLegacySettings(user.id); schedule(); return json(response, 201, { user });
+      const before = usersCount(); const user = registerUser(await readBody(request)); if (before === 0) migrateLegacySettings(user.id); schedule(); scheduleVideoScout(); return json(response, 201, { user });
     }
     if (request.method === 'POST' && url.pathname === '/api/auth/login') {
       const result = beginLogin(await readBody(request));
@@ -214,12 +259,46 @@ http.createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/auth/2fa/enable') return json(response, 200, { user: enableTwoFactor(user.id, (await readBody(request)).code) });
     if (request.method === 'POST' && url.pathname === '/api/auth/2fa/disable') return json(response, 200, { user: disableTwoFactor(user.id, (await readBody(request)).code) });
     if (request.method === 'GET' && url.pathname === '/api/users') return json(response, 200, { users: listUsers(user), limit: 3 });
-    if (request.method === 'GET' && url.pathname === '/api/state') { if (directSessionExists(user.id)) connectDirectWhatsApp(user.id).catch(error => saveLog(user, 'error', `Falha ao reconectar WhatsApp: ${error.message}`)); const settings = appSettings(user); return json(response, 200, { ...publicSettings(settings), automationStatus: automationStatus(user, settings), categories, campaign: currentShopeeCampaign(), safetyStatus: safetySummary(user.id, settings.safety), directStatus: directWhatsAppState(user.id), running, activity: activity(user.id, 12), user }); }
+    if (request.method === 'GET' && url.pathname === '/api/state') { const direct = directWhatsAppState(user.id); if (directSessionExists(user.id) && direct.status === 'desconectado' && !direct.error) connectDirectWhatsApp(user.id).catch(error => saveLog(user, 'error', `Falha ao reconectar WhatsApp: ${error.message}`)); const settings = appSettings(user); return json(response, 200, { ...publicSettings(settings), automationStatus: automationStatus(user, settings), videoScoutSummary: videoCandidateSummary(user.id), videoScoutRunning: videoScoutRunning.has(user.id), videoScoutCategories, categories, campaign: currentShopeeCampaign(), safetyStatus: safetySummary(user.id, settings.safety), directStatus: directWhatsAppState(user.id), running, activity: activity(user.id, 12), user }); }
     if (request.method === 'POST' && url.pathname === '/api/whatsapp-direct/connect') {
-      const result = await connectDirectWhatsApp(user.id); saveLog(user, 'info', 'Conexão direta do WhatsApp solicitada'); return json(response, 200, result);
+      const input = await readBody(request); const result = await connectDirectWhatsApp(user.id, { forceNewQr: Boolean(input.forceNewQr) }); saveLog(user, 'info', input.forceNewQr ? 'Novo QR Code do WhatsApp solicitado' : 'Conexão direta do WhatsApp solicitada'); return json(response, 200, result);
     }
     if (request.method === 'GET' && url.pathname === '/api/whatsapp-direct/status') return json(response, 200, directWhatsAppState(user.id));
+    if (request.method === 'GET' && url.pathname === '/api/whatsapp-direct/groups') return json(response, 200, await refreshDirectWhatsAppGroups(user.id));
     if (request.method === 'GET' && url.pathname === '/api/activity') return json(response, 200, activity(user.id));
+    if (request.method === 'GET' && url.pathname === '/api/video-candidates') {
+      const filters = {
+        channel: url.searchParams.get('channel') || 'shopee',
+        category: url.searchParams.get('category') || undefined,
+        categoryId: url.searchParams.get('categoryId') || undefined,
+        limit: url.searchParams.get('limit') || undefined,
+        subcategory: url.searchParams.get('subcategory') || undefined,
+        status: url.searchParams.get('status') || undefined,
+        scanId: url.searchParams.get('scanId') || undefined,
+        minScore: url.searchParams.get('minScore') || undefined,
+        minCommission: url.searchParams.get('minCommission') || undefined,
+        maxSales: url.searchParams.get('maxSales') || undefined,
+        minPrice: url.searchParams.get('minPrice') || undefined,
+        maxPrice: url.searchParams.get('maxPrice') || undefined,
+        creatorVideos: url.searchParams.get('creatorVideos') || undefined,
+        onlyNew: url.searchParams.get('onlyNew') === 'true',
+        onlyBoth: url.searchParams.get('onlyBoth') === 'true'
+      };
+      return json(response, 200, { candidates: listVideoCandidates(user.id, filters), summary: videoCandidateSummary(user.id), filters });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/video-scout/config') {
+      const input = await readBody(request); const saved = loadSettings(base, user.id);
+      saved.videoScout = normalizeVideoScout(input, saved.videoScout);
+      saveSettings(user.id, saved); scheduleVideoScout(); saveLog(user, 'info', '[VIDEO SCOUT] Configuração atualizada');
+      return json(response, 200, saved.videoScout);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/video-scout/scan') return json(response, 200, await performVideoScout(user, 'manual', String((await readBody(request)).categoryId || '')));
+    if (request.method === 'PATCH' && url.pathname.startsWith('/api/video-candidates/')) {
+      const id = decodeURIComponent(url.pathname.split('/').at(-1));
+      const input = await readBody(request); const candidate = updateVideoCandidateStatus(user.id, id, String(input.status || ''));
+      saveLog(user, 'info', `[VIDEO SCOUT] Status atualizado: ${candidate.nome} → ${candidate.status}`);
+      return json(response, 200, candidate);
+    }
     if (request.method === 'POST' && url.pathname === '/api/config/shopee') {
       const input = await readBody(request); const saved = loadSettings(base, user.id);
       saved.shopee.appId = String(input.appId || saved.shopee.appId || '').trim();
@@ -299,7 +378,7 @@ http.createServer(async (request, response) => {
         offers = [...lists.flatMap(normalizeOffers).filter(offer => matchesCategory(offer, category)), ...general];
       } else if (!general.length && category.query) offers = normalizeOffers(await getShopeeOffers(settings.shopee, { keyword: category.query })).filter(offer => matchesCategory(offer, category));
       else offers = general;
-      offers = offers.filter((offer, index, list) => list.findIndex(item => item.id === offer.id) === index);
+      offers = offers.map(markTimeLimitedFlash).filter((offer, index, list) => list.findIndex(item => item.id === offer.id) === index);
       offers = selectOffers(offers, { ...settings.filters, maxOffers: 24 }, new Set());
       saveLog(user, 'info', `${offers.length} oferta(s) consultada(s) na categoria ${category.label}`);
       return json(response, 200, { offers, category: category.label });
@@ -319,6 +398,7 @@ http.createServer(async (request, response) => {
   } catch (error) { json(response, 500, { error: error.message || 'Erro inesperado' }); }
 }).listen(base.port, base.host, () => {
   schedule();
+  scheduleVideoScout();
   for (const user of allUsers()) if (directSessionExists(user.id)) connectDirectWhatsApp(user.id).catch(error => saveLog(user, 'error', `Falha ao reconectar WhatsApp: ${error.message}`));
   console.log(`Painel pronto em http://${base.host}:${base.port}`);
 });
