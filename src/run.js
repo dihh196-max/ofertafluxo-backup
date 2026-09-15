@@ -48,7 +48,7 @@ export async function run(settings, destinationIds = null) {
     // Os horários oficiais do próprio produto são a única fonte usada para
     // marcar uma oferta relâmpago. A API de campanhas é uma landing page e
     // não fornece preço por item, portanto não é usada para inventar preços.
-    const categorizedOffers = (await offersForCategory(category)).map(markTimeLimitedFlash);
+    let categorizedOffers = (await offersForCategory(category)).map(markTimeLimitedFlash);
     const flashOffers = categorizedOffers.filter(item => item.flash);
     const flashIds = new Set(flashOffers.map(item => item.id));
     const normalOffers = categorizedOffers.filter(item => !flashIds.has(item.id));
@@ -58,7 +58,20 @@ export async function run(settings, destinationIds = null) {
     // envia a normal disponível e tenta uma relâmpago novamente na próxima vez.
     const preferred = preferredKind === 'flash' ? flashOffers : normalOffers;
     const fallback = preferredKind === 'flash' ? normalOffers : flashOffers;
-    const offer = pick(preferred) || pick(fallback);
+    let offer = pick(preferred) || pick(fallback);
+    // Só quando a primeira coleta não tiver um item novo, consulta a próxima
+    // página dos mesmos termos. Isso amplia variedade sem multiplicar a carga
+    // normal da automação nem fazer disparos em massa.
+    if (!offer && category.searchQueries?.length) {
+      const pageTwo = await Promise.all(category.searchQueries.map(keyword => getShopeeOffers(settings.shopee, { keyword, page: 2, limit: 50 })));
+      const extra = pageTwo.flatMap(normalizeOffers).filter(item => matchesCategory(item, category));
+      categorizedOffers = [...categorizedOffers, ...extra].filter((item, index, list) => list.findIndex(other => other.id === item.id) === index).map(markTimeLimitedFlash);
+      const extraFlash = categorizedOffers.filter(item => item.flash);
+      const extraFlashIds = new Set(extraFlash.map(item => item.id));
+      const extraNormal = categorizedOffers.filter(item => !extraFlashIds.has(item.id));
+      offer = pick(preferredKind === 'flash' ? extraFlash : extraNormal)
+        || pick(preferredKind === 'flash' ? extraNormal : extraFlash);
+    }
     if (!offer) return null;
     const text = formatOffer(offer, campaign);
     const reservation = reserveDelivery(settings.userId, destination, settings.safety);

@@ -2,15 +2,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const fileFor = userId => path.resolve('data/users', String(userId), 'sent-offers.json');
+const RECENT_SENT_DAYS = 14;
 
 export function readSentIds(userId, destinationId) {
   const file = fileFor(userId);
   if (!fs.existsSync(file)) return new Set();
   const entries = JSON.parse(fs.readFileSync(file, 'utf8'));
-  // Registros antigos, sem destino, continuam sendo respeitados para evitar
-  // reenviar imediatamente uma oferta já divulgada antes desta atualização.
+  const cutoff = Date.now() - RECENT_SENT_DAYS * 24 * 60 * 60 * 1000;
+  // Evita repetição recente para o mesmo grupo, mas não deixa um histórico
+  // antigo (ou um registro legado sem data) esgotar o catálogo para sempre.
   return new Set(entries
-    .filter(entry => !entry.destinationId || entry.destinationId === destinationId)
+    .filter(entry => {
+      const sentAt = Date.parse(entry.sentAt || entry.at || '');
+      const isRecent = Number.isFinite(sentAt) && sentAt >= cutoff;
+      return isRecent && (!entry.destinationId || entry.destinationId === destinationId);
+    })
     .map(entry => entry.id));
 }
 
