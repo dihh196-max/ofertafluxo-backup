@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { loadEnv, config } from './env.js';
 import { getShopeeOffers } from './shopee.js';
-import { markTimeLimitedFlash, normalizeOffers, selectOffers } from './offers.js';
+import { markTimeLimitedFlash, normalizeOffers, selectOffers, uniqueOffers } from './offers.js';
 import { matchesCategory } from './categories.js';
 import { run } from './run.js';
 import { activity, addActivity, loadSettings, migrateLegacySettings, newDestination, publicSettings, saveSettings } from './settings.js';
@@ -433,7 +433,7 @@ http.createServer(async (request, response) => {
         offers = [...lists.flatMap(normalizeOffers).filter(offer => matchesCategory(offer, category)), ...general];
       } else if (!general.length && category.query) offers = normalizeOffers(await getShopeeOffers(settings.shopee, { keyword: category.query })).filter(offer => matchesCategory(offer, category));
       else offers = general;
-      offers = offers.map(markTimeLimitedFlash).filter((offer, index, list) => list.findIndex(item => item.id === offer.id) === index);
+      offers = uniqueOffers(offers.map(markTimeLimitedFlash));
       offers = selectOffers(offers, { ...settings.filters, maxOffers: 24 }, new Set());
       saveLog(user, 'info', `${offers.length} oferta(s) consultada(s) na categoria ${category.label}`);
       return json(response, 200, { offers, category: category.label });

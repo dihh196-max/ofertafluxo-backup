@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { offerDedupKeys } from './offers.js';
 
 const fileFor = userId => path.resolve('data/users', String(userId), 'sent-offers.json');
 const RECENT_SENT_DAYS = 14;
@@ -17,7 +18,8 @@ export function readSentIds(userId, destinationId) {
       const isRecent = Number.isFinite(sentAt) && sentAt >= cutoff;
       return isRecent && (!entry.destinationId || entry.destinationId === destinationId);
     })
-    .map(entry => entry.id));
+    .flatMap(entry => [entry.id, ...(Array.isArray(entry.dedupKeys) ? entry.dedupKeys : [])])
+    .filter(Boolean));
 }
 
 export function rememberSent(userId, records) {
@@ -29,6 +31,7 @@ export function rememberSent(userId, records) {
     const offer = record.offer || record;
     return {
       id: offer.id,
+      dedupKeys: offerDedupKeys(offer),
       destinationId: record.destinationId || null,
       categoryId: record.categoryId || null,
       sentAt: now

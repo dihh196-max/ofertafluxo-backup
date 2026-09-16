@@ -1,5 +1,5 @@
 import { getShopeeOffers } from './shopee.js';
-import { formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers } from './offers.js';
+import { formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers, uniqueOffers } from './offers.js';
 import { readSentIds, rememberSent } from './store.js';
 import { sendWhatsAppOffer } from './whatsapp.js';
 import { sendEvolutionOffer } from './evolution.js';
@@ -33,7 +33,7 @@ export async function run(settings, destinationIds = null) {
         fallbackByCategory.set(category.id, Promise.all(category.searchQueries.map(keyword => getShopeeOffers(settings.shopee, { keyword }))));
       }
       const specific = (await fallbackByCategory.get(category.id)).flatMap(normalizeOffers).filter(offer => matchesCategory(offer, category));
-      return [...specific, ...general].filter((offer, index, list) => list.findIndex(item => item.id === offer.id) === index);
+      return uniqueOffers([...specific, ...general]);
     }
     if (general.length || !category.query) return general;
     if (!fallbackByCategory.has(category.id)) {
@@ -65,7 +65,7 @@ export async function run(settings, destinationIds = null) {
     if (!offer && category.searchQueries?.length) {
       const pageTwo = await Promise.all(category.searchQueries.map(keyword => getShopeeOffers(settings.shopee, { keyword, page: 2, limit: 50 })));
       const extra = pageTwo.flatMap(normalizeOffers).filter(item => matchesCategory(item, category));
-      categorizedOffers = [...categorizedOffers, ...extra].filter((item, index, list) => list.findIndex(other => other.id === item.id) === index).map(markTimeLimitedFlash);
+      categorizedOffers = uniqueOffers([...categorizedOffers, ...extra]).map(markTimeLimitedFlash);
       const extraFlash = categorizedOffers.filter(item => item.flash);
       const extraFlashIds = new Set(extraFlash.map(item => item.id));
       const extraNormal = categorizedOffers.filter(item => !extraFlashIds.has(item.id));

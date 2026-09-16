@@ -83,6 +83,50 @@ export function normalizeOffers(data, { flash = false } = {}) {
   }).filter(offer => offer.id && offer.url && offer.price > 0);
 }
 
+function normalizedText(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function normalizedUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    url.search = '';
+    url.hash = '';
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/, '')}`.toLowerCase();
+  } catch { return ''; }
+}
+
+// A Open API pode listar o mesmo produto em campanhas, variações ou links de
+// afiliado diferentes. A assinatura combina título e imagem (quando há) para
+// impedir repetição visual sem depender só do ID técnico retornado pela lista.
+export function offerDedupKeys(offer) {
+  const keys = new Set();
+  if (offer?.id) keys.add(`id:${offer.id}`);
+  const url = normalizedUrl(offer?.url);
+  if (url) keys.add(`url:${url}`);
+  const title = normalizedText(offer?.title);
+  const image = normalizedUrl(offer?.image);
+  const shop = normalizedText(offer?.shop);
+  if (title && image) keys.add(`produto:${title}|${image}`);
+  else if (title && shop) keys.add(`produto:${title}|loja:${shop}`);
+  else if (title) keys.add(`produto:${title}`);
+  return [...keys];
+}
+
+export function offerAlreadySeen(offer, seenKeys) {
+  return offerDedupKeys(offer).some(key => seenKeys.has(key));
+}
+
+export function uniqueOffers(offers) {
+  const seen = new Set();
+  return offers.filter(offer => {
+    if (offerAlreadySeen(offer, seen)) return false;
+    offerDedupKeys(offer).forEach(key => seen.add(key));
+    return true;
+  });
+}
+
 export function activeFlashOffer(offer, now = Date.now()) {
   if (!offer.flash) return false;
   return (!offer.flashStartsAt || offer.flashStartsAt <= now) && (!offer.flashEndsAt || offer.flashEndsAt > now);
@@ -104,7 +148,7 @@ export function selectOffers(offers, filters, sentIds) {
   const preferredMaxPrice = Number(filters.preferredMaxPrice || 0);
   const priceTier = offer => preferredMaxPrice > 0 && offer.price <= preferredMaxPrice ? 0 : 1;
   return offers
-    .filter(offer => !sentIds.has(offer.id))
+    .filter(offer => !offerAlreadySeen(offer, sentIds))
     // Algumas listas da Shopee não retornam preço anterior/desconto. Não as descartamos
     // apenas por esse campo não existir; quando há desconto informado, o filtro é aplicado.
     .filter(offer => offer.discount === null || offer.discount >= filters.minDiscount)

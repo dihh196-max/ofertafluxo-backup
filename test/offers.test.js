@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activeFlashOffer, formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers } from '../src/offers.js';
+import { activeFlashOffer, formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers, uniqueOffers } from '../src/offers.js';
 import { categoryById, matchesCategory } from '../src/categories.js';
 import { automationWindowOpen, normalizeSafety } from '../src/safety.js';
 import { createDestinationSchedule, nextDueDestination, scheduleAfterRun } from '../src/automation-schedule.js';
@@ -13,6 +13,18 @@ test('normaliza e seleciona apenas uma oferta nova que atende aos filtros', () =
   const selected = selectOffers(offers, { minDiscount: 20, minPrice: 20, maxPrice: 80, maxOffers: 5 }, new Set());
   assert.equal(selected.length, 1);
   assert.match(formatOffer(selected[0]), /50% DE DESCONTO/);
+});
+
+test('não repete o mesmo produto quando a Shopee devolve IDs ou links diferentes', () => {
+  const common = { title: 'Kit 3 Vestidos Midi Canelado', image: 'https://cf.shopee.com.br/file/vestido.jpg?cache=1', price: 60, originalPrice: 100, discount: 40, commissionRate: 0.1, rating: 5, sales: 4 };
+  const offers = uniqueOffers([
+    { ...common, id: 'id-campanha', url: 'https://s.shopee.com.br/link-da-campanha' },
+    { ...common, id: 'id-variacao', url: 'https://s.shopee.com.br/outro-link-afiliado' },
+    { ...common, id: 'calca-distinta', title: 'Calça Pantalona Feminina', image: 'https://cf.shopee.com.br/file/calca.jpg', url: 'https://s.shopee.com.br/calca' }
+  ]);
+  assert.equal(offers.length, 2);
+  const alreadySent = new Set(['produto:kit 3 vestidos midi canelado|cf.shopee.com.br/file/vestido.jpg']);
+  assert.equal(selectOffers(offers, { minDiscount: 10, minPrice: 0, maxPrice: 200, maxOffers: 5 }, alreadySent).length, 1);
 });
 
 test('usa o desconto e o cupom apenas quando esses dados vierem da Shopee', () => {
