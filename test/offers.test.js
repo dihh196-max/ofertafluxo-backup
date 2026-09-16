@@ -131,6 +131,20 @@ test('moda íntima encontra lingeries e sutiãs sem misturar produtos masculinos
   assert.equal(matchesCategory(infantil, category), false);
 });
 
+test('calçados femininos inclui os estilos selecionados e exclui esportivos masculinos', () => {
+  const [sapatilha, rasteirinha, scarpin, chuteira] = normalizeOffers({ productOfferV2: { nodes: [
+    { itemId: 41, productName: 'Sapatilha feminina confortável', offerLink: 'https://s.shopee.com.br/41', price: 65 },
+    { itemId: 42, productName: 'Rasteirinha feminina casual', offerLink: 'https://s.shopee.com.br/42', price: 39 },
+    { itemId: 43, productName: 'Scarpin feminino salto médio', offerLink: 'https://s.shopee.com.br/43', price: 99 },
+    { itemId: 44, productName: 'Chuteira masculina society', offerLink: 'https://s.shopee.com.br/44', price: 120 }
+  ] } });
+  const category = categoryById('fashion-footwear');
+  assert.equal(matchesCategory(sapatilha, category), true);
+  assert.equal(matchesCategory(rasteirinha, category), true);
+  assert.equal(matchesCategory(scarpin, category), true);
+  assert.equal(matchesCategory(chuteira, category), false);
+});
+
 test('aplica janela de descanso e limites conservadores de segurança', () => {
   const safety = normalizeSafety({ maxPerHour: 999, maxPerDay: -1, quietStartHour: 22, quietEndHour: 8 });
   assert.equal(safety.maxPerHour, 20);
