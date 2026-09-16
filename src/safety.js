@@ -9,11 +9,13 @@ let lastCompletedAt = 0;
 export const safetyDefaults = {
   enabled: true,
   maxPerHour: 12,
-  maxPerDay: 48,
+  // Zero significa sem teto diário. Os limites por hora, por grupo e a fila
+  // continuam ativos para manter um ritmo seguro de envio.
+  maxPerDay: 0,
   minMinutesPerDestination: 45,
   minSecondsBetweenMessages: 8,
-  quietStartHour: 22,
-  quietEndHour: 8,
+  quietStartHour: 21,
+  quietEndHour: 6,
   timeZone: 'America/Cuiaba'
 };
 
@@ -37,10 +39,11 @@ const elapsed = (entry, now) => now.getTime() - new Date(entry.createdAt).getTim
 const countable = entries => entries.filter(entry => entry.status !== 'failed');
 
 export function normalizeSafety(value = {}) {
+  const requestedDailyLimit = Number(value.maxPerDay);
   return {
     enabled: value.enabled !== false,
     maxPerHour: clamp(value.maxPerHour, 1, 20, safetyDefaults.maxPerHour),
-    maxPerDay: clamp(value.maxPerDay, 1, 100, safetyDefaults.maxPerDay),
+    maxPerDay: requestedDailyLimit === 0 ? 0 : clamp(value.maxPerDay, 1, 100, safetyDefaults.maxPerDay),
     minMinutesPerDestination: clamp(value.minMinutesPerDestination, 15, 360, safetyDefaults.minMinutesPerDestination),
     minSecondsBetweenMessages: clamp(value.minSecondsBetweenMessages, 5, 60, safetyDefaults.minSecondsBetweenMessages),
     quietStartHour: clamp(value.quietStartHour, 0, 23, safetyDefaults.quietStartHour),
@@ -80,7 +83,7 @@ export function reserveDelivery(userId, destination, safety, now = new Date()) {
     const hourly = validEntries.filter(entry => elapsed(entry, now) < 60 * 60_000).length;
     if (hourly >= safety.maxPerHour) throw new Error(`Limite de segurança de ${safety.maxPerHour} envios por hora atingido.`);
     const today = safetySummary(userId, safety, now).sentToday;
-    if (today >= safety.maxPerDay) throw new Error(`Limite de segurança de ${safety.maxPerDay} envios por dia atingido.`);
+    if (safety.maxPerDay > 0 && today >= safety.maxPerDay) throw new Error(`Limite de segurança de ${safety.maxPerDay} envios por dia atingido.`);
     const lastDestination = validEntries.filter(entry => entry.destinationId === destination.id).at(-1);
     if (lastDestination && elapsed(lastDestination, now) < safety.minMinutesPerDestination * 60_000) {
       throw new Error(`O destino “${destination.name}” está no intervalo mínimo de segurança.`);

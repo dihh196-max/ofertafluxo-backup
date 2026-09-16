@@ -153,6 +153,15 @@ test('aplica janela de descanso e limites conservadores de segurança', () => {
   assert.equal(automationWindowOpen(safety, new Date('2026-08-24T10:00:00-04:00')), true);
 });
 
+test('aceita sem teto diário e mantém a janela de 06h até 21h', () => {
+  const safety = normalizeSafety({ maxPerDay: 0, maxPerHour: 12, quietStartHour: 21, quietEndHour: 6 });
+  assert.equal(safety.maxPerDay, 0);
+  assert.equal(safety.maxPerHour, 12);
+  assert.equal(automationWindowOpen(safety, new Date('2026-08-24T05:00:00-04:00')), false);
+  assert.equal(automationWindowOpen(safety, new Date('2026-08-24T06:00:00-04:00')), true);
+  assert.equal(automationWindowOpen(safety, new Date('2026-08-24T21:00:00-04:00')), false);
+});
+
 test('prioriza preço acessível antes de comissão entre ofertas válidas', () => {
   const offers = normalizeOffers({ productOfferV2: { nodes: [
     { itemId: 30, productName: 'Produto caro', offerLink: 'https://s.shopee.com.br/30', price: 180, commissionRate: 0.8, ratingStar: 5 },

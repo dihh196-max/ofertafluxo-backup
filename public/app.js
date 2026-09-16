@@ -178,11 +178,13 @@ function renderState() {
     : 'A automação está pausada.';
   const safety = state.safetyStatus || state.safety || {};
   $('#safety-hour').value = safety.maxPerHour || 12;
-  $('#safety-day').value = safety.maxPerDay || 48;
+  $('#safety-day').min = '0';
+  $('#safety-day').value = safety.maxPerDay ?? 0;
   $('#safety-group-minutes').value = safety.minMinutesPerDestination || 45;
   $('#safety-quiet-start').value = safety.quietStartHour ?? 22;
   $('#safety-quiet-end').value = safety.quietEndHour ?? 8;
-  $('#safety-copy').textContent = `${safety.sentLastHour || 0}/${safety.maxPerHour || 12} envios na última hora · ${safety.sentToday || 0}/${safety.maxPerDay || 48} hoje${safety.automationWindowOpen === false ? ' · descanso ativo' : ''}.`;
+  const dailySafety = safety.maxPerDay === 0 ? 'sem limite diário' : `${safety.sentToday || 0}/${safety.maxPerDay} hoje`;
+  $('#safety-copy').textContent = `${safety.sentLastHour || 0}/${safety.maxPerHour || 12} envios na última hora · ${dailySafety}${safety.automationWindowOpen === false ? ' · descanso ativo' : ''}.`;
   renderCommunityCalendar();
   const videoScout = state.videoScout || {};
   $('#video-scout-enabled').checked = Boolean(videoScout.enabled);
