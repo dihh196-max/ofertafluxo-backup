@@ -34,6 +34,8 @@ test('exibe preço anterior riscado ao receber percentual oficial de desconto', 
   assert.match(formatOffer(offer), /Por: R\$\s?70,00/);
   assert.match(formatOffer(offer), /ESSE ACHADO É PRA VOCÊ MESMA/);
   assert.match(formatOffer(offer), /Compre aqui:/);
+  assert.match(formatOffer(offer), /ESSE ACHADO É PRA VOCÊ MESMA[^]*\n\n🛍️/);
+  assert.match(formatOffer(offer), /Por: R\$\s?70,00[^]*\n\n🛒/);
 });
 
 test('destaca oferta relâmpago ativa com a validade fornecida pela Shopee', () => {

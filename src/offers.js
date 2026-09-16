@@ -116,14 +116,24 @@ export function selectOffers(offers, filters, sentIds) {
 const brl = value => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
 export function formatOffer(offer, campaign = null) {
-  const before = offer.originalPrice > offer.price ? `\n~De: ${brl(offer.originalPrice)}~` : '';
+  const before = offer.originalPrice > offer.price ? `~De: ${brl(offer.originalPrice)}~` : '';
   const discount = offer.discount ? `😱🔻 *${offer.discount}% DE DESCONTO*` : '💥 *OFERTA ESPECIAL*';
-  const couponLine = offer.couponCode ? `\n🏷️ *USE O CUPOM:* \`${offer.couponCode}\`` : '';
+  const couponLine = offer.couponCode ? `🏷️ *USE O CUPOM:* \`${offer.couponCode}\`` : '';
   const campaignLabel = offer.campaignLabel || campaign?.label;
-  const campaignLine = campaignLabel ? `\n🏷️ *${campaignLabel}*` : '';
+  const campaignLine = campaignLabel ? `🏷️ *${campaignLabel}*` : '';
   const endsAt = offer.flashEndsAt ? new Date(offer.flashEndsAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
   const flashHeader = offer.flash
-    ? `⚡ *OFERTA RELÂMPAGO SHOPEE*${endsAt ? ` — *Válida até ${endsAt}*` : ''}\n`
+    ? `⚡ *OFERTA RELÂMPAGO SHOPEE*${endsAt ? ` — *Válida até ${endsAt}*` : ''}`
     : '';
-  return `ESSE ACHADO É PRA VOCÊ MESMA 🎯✨👇\n${flashHeader}🛍️ *QUEIMA DE ESTOQUE!!!* ${offer.title}\n${discount}${before}\n💥 *Por: ${brl(offer.price)}*${couponLine}${campaignLine}\n🛒 *Compre aqui:* ${offer.url}\n⚠️ *Promoção sujeita à alteração de preço e estoque do site.*`;
+  const priceBlock = [discount, before, `💥 *Por: ${brl(offer.price)}*`].filter(Boolean).join('\n');
+  return [
+    'ESSE ACHADO É PRA VOCÊ MESMA 🎯✨👇',
+    flashHeader,
+    `🛍️ *QUEIMA DE ESTOQUE!!!* ${offer.title}`,
+    priceBlock,
+    couponLine,
+    campaignLine,
+    `🛒 *Compre aqui:* ${offer.url}`,
+    '⚠️ *Promoção sujeita à alteração de preço e estoque do site.*'
+  ].filter(Boolean).join('\n\n');
 }
