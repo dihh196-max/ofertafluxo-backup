@@ -12,6 +12,7 @@ export const defaultSettings = {
   shopee: { appId: '', secret: '' },
   filters: { minDiscount: 15, minPrice: 0, maxPrice: 1000, maxOffers: 5, preferredMaxPrice: 80 },
   automation: { enabled: false, intervalMinutes: 60, lastRunAt: null, destinationSchedule: {} },
+  communityContent: { enabled: true, sentSlots: {}, retryAfter: {} },
   videoScout: defaultVideoScout,
   safety: safetyDefaults,
   destinations: [],
@@ -38,6 +39,12 @@ export function loadSettings(base, userId) {
     shopee: { appId: saved.shopee?.appId || '', secret: saved.shopee?.secret || '' },
     filters: { ...defaultSettings.filters, ...base.filters, ...saved.filters },
     automation: { ...defaultSettings.automation, ...saved.automation },
+    communityContent: {
+      ...defaultSettings.communityContent,
+      ...saved.communityContent,
+      sentSlots: { ...defaultSettings.communityContent.sentSlots, ...(saved.communityContent?.sentSlots || {}) },
+      retryAfter: { ...defaultSettings.communityContent.retryAfter, ...(saved.communityContent?.retryAfter || {}) }
+    },
     videoScout: normalizeVideoScout(saved.videoScout || {}, { ...defaultVideoScout, ...base.videoScout, weights: { ...defaultVideoScout.weights, ...base.videoScout?.weights } }),
     safety: normalizeSafety({ ...defaultSettings.safety, ...saved.safety }),
     evolution: { ...defaultSettings.evolution, ...base.evolution, ...saved.evolution },
@@ -52,6 +59,7 @@ export function publicSettings(value) {
     shopee: { appId: value.shopee.appId ? `••••${value.shopee.appId.slice(-4)}` : '', connected: Boolean(value.shopee.appId && value.shopee.secret) },
     filters: value.filters,
     automation: value.automation,
+    communityContent: value.communityContent,
     videoScout: value.videoScout,
     safety: value.safety,
     destinations: value.destinations,

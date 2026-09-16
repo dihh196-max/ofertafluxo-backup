@@ -8,15 +8,18 @@ import { markTimeLimitedFlash, normalizeOffers, selectOffers } from './offers.js
 import { matchesCategory } from './categories.js';
 import { run } from './run.js';
 import { activity, addActivity, loadSettings, migrateLegacySettings, newDestination, publicSettings, saveSettings } from './settings.js';
-import { connectDirectWhatsApp, directSessionExists, directWhatsAppState, refreshDirectWhatsAppGroups } from './whatsapp-direct.js';
+import { connectDirectWhatsApp, directSessionExists, directWhatsAppState, refreshDirectWhatsAppGroups, sendDirectWhatsAppText } from './whatsapp-direct.js';
 import { categories, categoryById } from './categories.js';
 import { currentShopeeCampaign } from './campaigns.js';
-import { automationWindowOpen, normalizeSafety, safetySummary } from './safety.js';
+import { automationWindowOpen, confirmDelivery, failDelivery, normalizeSafety, queueDelivery, reserveDelivery, safetySummary } from './safety.js';
 import { allUsers, beginLogin, destroySession, disableTwoFactor, enableTwoFactor, finishTwoFactor, listUsers, registerUser, setupTwoFactor, userById, userFromSession, usersCount } from './auth.js';
 import { createDestinationSchedule, nextDueDestination, refreshDestinationSchedule, scheduleAfterRun, scheduleRetry, scheduleStatus } from './automation-schedule.js';
 import { listVideoCandidates, updateVideoCandidateStatus, videoCandidateSummary } from './video-candidate-store.js';
 import { runVideoScout } from './video-scout.js';
 import { normalizeVideoScout, videoScoutCategories } from './video-scout-config.js';
+import { formatCommunityContent, hasPendingCommunityContent, weeklyCommunityCalendar } from './community-content.js';
+import { sendEvolutionOffer } from './evolution.js';
+import { sendWhatsAppOffer } from './whatsapp.js';
 
 loadEnv();
 const base = config();
@@ -25,6 +28,7 @@ let running = false;
 let timer;
 let videoScoutTimer;
 const videoScoutRunning = new Set();
+const communityContentRunning = new Set();
 const localHosts = new Set(['127.0.0.1', 'localhost', '::1']);
 const externallyHosted = base.allowedOrigins.some(origin => origin.startsWith('https://'));
 if (!localHosts.has(base.host) && (base.panelAccessKey.length < 24 || !base.allowedOrigins.length)) {
@@ -41,6 +45,7 @@ function appSettings(user) {
     evolution: { ...saved.evolution, targets: saved.destinations.filter(d => d.active).map(d => d.number) },
     directWhatsApp: { ...saved.directWhatsApp, targets: saved.destinations.filter(d => d.active).map(d => d.number) },
     automation: saved.automation,
+    communityContent: saved.communityContent,
     videoScout: saved.videoScout,
     safety: saved.safety,
     destinations: saved.destinations,
@@ -133,6 +138,48 @@ async function performVideoScout(user, origin = 'manual', categoryId = '') {
     throw error;
   } finally { videoScoutRunning.delete(user.id); }
 }
+async function performCommunityContent(user, slot) {
+  if (communityContentRunning.has(user.id)) return { sent: 0, skipped: 'Conteúdo semanal já está em processamento.' };
+  communityContentRunning.add(user.id);
+  try {
+    const saved = loadSettings(base, user.id);
+    const settings = appSettings(user);
+    if (!saved.automation.enabled || settings.communityContent?.enabled === false) return { sent: 0, skipped: 'Conteúdo semanal pausado.' };
+    if (!automationWindowOpen(settings.safety)) return { sent: 0, skipped: 'Conteúdo semanal aguardando o horário permitido.' };
+    const text = formatCommunityContent(slot);
+    const destinations = saved.destinations.filter(destination => destination.active && destination.consent === true);
+    const sentSlots = { ...(saved.communityContent?.sentSlots || {}) };
+    const retryAfter = { ...(saved.communityContent?.retryAfter || {}) };
+    const errors = [];
+    let sent = 0;
+    for (const destination of destinations) {
+      const deliveryKey = `${slot.key}:${destination.id}`;
+      if (sentSlots[deliveryKey]) continue;
+      let reservation;
+      try {
+        reservation = reserveDelivery(user.id, destination, settings.safety);
+        await queueDelivery(async () => {
+          if (settings.directWhatsApp?.enabled) return sendDirectWhatsAppText(user.id, text, [destination.number]);
+          if (settings.evolution?.enabled) return sendEvolutionOffer(text, { ...settings.evolution, targets: [destination.number] });
+          return sendWhatsAppOffer(text, { ...settings.whatsapp, recipients: [destination.number] });
+        }, settings.safety);
+        confirmDelivery(user.id, reservation, { id: `conteudo:${slot.id}` });
+        sentSlots[deliveryKey] = new Date().toISOString();
+        sent += 1;
+      } catch (error) {
+        if (reservation) failDelivery(user.id, reservation, error);
+        errors.push(`${destination.name}: ${error.message}`);
+      }
+    }
+    if (errors.length) retryAfter[slot.key] = new Date(Date.now() + 5 * 60_000).toISOString();
+    else delete retryAfter[slot.key];
+    saved.communityContent = { ...saved.communityContent, sentSlots, retryAfter };
+    saveSettings(user.id, saved);
+    if (sent) saveLog(user, 'success', `[CONTEÚDO SEMANAL] ${slot.label} enviado para ${sent} destino(s).`, { slot: slot.id, sent });
+    if (errors.length) saveLog(user, 'error', `[CONTEÚDO SEMANAL] ${slot.label}: ${errors.join(' | ')}`, { slot: slot.id });
+    return { sent, errors };
+  } finally { communityContentRunning.delete(user.id); }
+}
 function schedule() {
   clearInterval(timer);
   const checkSchedules = () => {
@@ -142,6 +189,14 @@ function schedule() {
       const { automation } = saved;
       if (!automation.enabled) continue;
       if (running) continue;
+      if (communityContentRunning.has(user.id)) continue;
+      const communitySlot = hasPendingCommunityContent(saved.communityContent, saved.destinations, new Date(now), saved.safety.timeZone);
+      if (communitySlot) {
+        // Conteúdo adicional também usa a fila, o intervalo por grupo e os
+        // limites diários. Enquanto ele é enviado, a oferta normal aguarda.
+        performCommunityContent(user, communitySlot).catch(() => {});
+        continue;
+      }
       const destinationSchedule = refreshDestinationSchedule(automation, saved.destinations, now);
       const destination = nextDueDestination(saved.destinations, destinationSchedule, now);
       if (!destination) {
@@ -259,7 +314,7 @@ http.createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/auth/2fa/enable') return json(response, 200, { user: enableTwoFactor(user.id, (await readBody(request)).code) });
     if (request.method === 'POST' && url.pathname === '/api/auth/2fa/disable') return json(response, 200, { user: disableTwoFactor(user.id, (await readBody(request)).code) });
     if (request.method === 'GET' && url.pathname === '/api/users') return json(response, 200, { users: listUsers(user), limit: 3 });
-    if (request.method === 'GET' && url.pathname === '/api/state') { const direct = directWhatsAppState(user.id); if (directSessionExists(user.id) && direct.status === 'desconectado' && !direct.error) connectDirectWhatsApp(user.id).catch(error => saveLog(user, 'error', `Falha ao reconectar WhatsApp: ${error.message}`)); const settings = appSettings(user); return json(response, 200, { ...publicSettings(settings), automationStatus: automationStatus(user, settings), videoScoutSummary: videoCandidateSummary(user.id), videoScoutRunning: videoScoutRunning.has(user.id), videoScoutCategories, categories, campaign: currentShopeeCampaign(), safetyStatus: safetySummary(user.id, settings.safety), directStatus: directWhatsAppState(user.id), running, activity: activity(user.id, 12), user }); }
+    if (request.method === 'GET' && url.pathname === '/api/state') { const direct = directWhatsAppState(user.id); if (directSessionExists(user.id) && direct.status === 'desconectado' && !direct.error) connectDirectWhatsApp(user.id).catch(error => saveLog(user, 'error', `Falha ao reconectar WhatsApp: ${error.message}`)); const settings = appSettings(user); return json(response, 200, { ...publicSettings(settings), automationStatus: automationStatus(user, settings), communityCalendar: weeklyCommunityCalendar(), videoScoutSummary: videoCandidateSummary(user.id), videoScoutRunning: videoScoutRunning.has(user.id), videoScoutCategories, categories, campaign: currentShopeeCampaign(), safetyStatus: safetySummary(user.id, settings.safety), directStatus: directWhatsAppState(user.id), running, activity: activity(user.id, 12), user }); }
     if (request.method === 'POST' && url.pathname === '/api/whatsapp-direct/connect') {
       const input = await readBody(request); const result = await connectDirectWhatsApp(user.id, { forceNewQr: Boolean(input.forceNewQr) }); saveLog(user, 'info', input.forceNewQr ? 'Novo QR Code do WhatsApp solicitado' : 'Conexão direta do WhatsApp solicitada'); return json(response, 200, result);
     }

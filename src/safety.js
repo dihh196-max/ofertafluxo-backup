@@ -34,6 +34,7 @@ const partsAt = (date, timeZone) => Object.fromEntries(new Intl.DateTimeFormat('
   timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23'
 }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
 const elapsed = (entry, now) => now.getTime() - new Date(entry.createdAt).getTime();
+const countable = entries => entries.filter(entry => entry.status !== 'failed');
 
 export function normalizeSafety(value = {}) {
   return {
@@ -57,7 +58,7 @@ export function automationWindowOpen(safety, now = new Date()) {
 }
 
 export function safetySummary(userId, safety, now = new Date()) {
-  const entries = read(userId);
+  const entries = countable(read(userId));
   const sentLastHour = entries.filter(entry => elapsed(entry, now) < 60 * 60_000).length;
   const sentToday = entries.filter(entry => {
     const current = partsAt(now, safety.timeZone);
@@ -75,11 +76,12 @@ export function safetySummary(userId, safety, now = new Date()) {
 export function reserveDelivery(userId, destination, safety, now = new Date()) {
   const entries = read(userId);
   if (safety.enabled) {
-    const hourly = entries.filter(entry => elapsed(entry, now) < 60 * 60_000).length;
+    const validEntries = countable(entries);
+    const hourly = validEntries.filter(entry => elapsed(entry, now) < 60 * 60_000).length;
     if (hourly >= safety.maxPerHour) throw new Error(`Limite de segurança de ${safety.maxPerHour} envios por hora atingido.`);
     const today = safetySummary(userId, safety, now).sentToday;
     if (today >= safety.maxPerDay) throw new Error(`Limite de segurança de ${safety.maxPerDay} envios por dia atingido.`);
-    const lastDestination = entries.filter(entry => entry.destinationId === destination.id).at(-1);
+    const lastDestination = validEntries.filter(entry => entry.destinationId === destination.id).at(-1);
     if (lastDestination && elapsed(lastDestination, now) < safety.minMinutesPerDestination * 60_000) {
       throw new Error(`O destino “${destination.name}” está no intervalo mínimo de segurança.`);
     }

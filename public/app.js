@@ -124,6 +124,15 @@ function renderDestinations() {
     : `<p class="form-note">${directConnected ? 'Atualizando grupos administrados… Se a lista continuar vazia, confirme que este número é administrador dos grupos.' : 'Conecte o WhatsApp para carregar automaticamente os grupos que este número administra.'}</p>`;
   syncDestinationGroupChoices();
 }
+function renderCommunityCalendar() {
+  const calendar = $('#community-calendar');
+  if (!calendar) return;
+  const enabled = state.communityContent?.enabled !== false;
+  $('#community-status').textContent = enabled ? 'Ativo' : 'Pausado';
+  $('#community-status').classList.toggle('off', !enabled);
+  const items = state.communityCalendar || [];
+  calendar.innerHTML = items.map(item => `<div class="community-slot"><strong>${escapeHtml(item.weekday)}</strong><span>${escapeHtml(item.time)} · ${escapeHtml(item.type)}</span><small>${escapeHtml(item.label)}</small></div>`).join('');
+}
 function syncDestinationGroupChoices() {
   const select = $('#destination-authorial-group');
   if (!select) return;
@@ -174,6 +183,7 @@ function renderState() {
   $('#safety-quiet-start').value = safety.quietStartHour ?? 22;
   $('#safety-quiet-end').value = safety.quietEndHour ?? 8;
   $('#safety-copy').textContent = `${safety.sentLastHour || 0}/${safety.maxPerHour || 12} envios na última hora · ${safety.sentToday || 0}/${safety.maxPerDay || 48} hoje${safety.automationWindowOpen === false ? ' · descanso ativo' : ''}.`;
+  renderCommunityCalendar();
   const videoScout = state.videoScout || {};
   $('#video-scout-enabled').checked = Boolean(videoScout.enabled);
   $('#video-scout-interval').value = videoScout.intervalMinutes || 60;

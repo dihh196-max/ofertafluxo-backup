@@ -143,4 +143,16 @@ export async function sendDirectWhatsAppOffer(userId, offer, text, targets) {
   }
   return results;
 }
+export async function sendDirectWhatsAppText(userId, text, targets) {
+  const direct = directFor(userId);
+  if (!direct.socket || direct.status !== 'conectado') throw new Error('Conecte o WhatsApp pelo QR Code antes de enviar.');
+  if (!targets?.length) throw new Error('Adicione ao menos um destino ativo.');
+  const results = [];
+  for (const target of targets) {
+    const jid = target.includes('@') ? target : `${target}@s.whatsapp.net`;
+    results.push(await direct.socket.sendMessage(jid, { text, linkPreview: true }));
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+  return results;
+}
 export function directSessionExists(userId) { return fs.existsSync(authDir(userId)); }
