@@ -117,6 +117,20 @@ test('moda feminina aceita roupas e exclui bolsas e calçados', () => {
   assert.equal(matchesCategory(sneakers, category), false);
 });
 
+test('moda íntima encontra lingeries e sutiãs sem misturar produtos masculinos ou infantis', () => {
+  const [lingerie, sutia, cueca, infantil] = normalizeOffers({ productOfferV2: { nodes: [
+    { itemId: 31, productName: 'Conjunto lingerie feminina em renda', offerLink: 'https://s.shopee.com.br/31', price: 59 },
+    { itemId: 32, productName: 'Sutiã feminino sem bojo', offerLink: 'https://s.shopee.com.br/32', price: 42 },
+    { itemId: 33, productName: 'Cueca masculina kit algodão', offerLink: 'https://s.shopee.com.br/33', price: 39 },
+    { itemId: 34, productName: 'Lingerie infantil fantasia', offerLink: 'https://s.shopee.com.br/34', price: 25 }
+  ] } });
+  const category = categoryById('fashion-intimates');
+  assert.equal(matchesCategory(lingerie, category), true);
+  assert.equal(matchesCategory(sutia, category), true);
+  assert.equal(matchesCategory(cueca, category), false);
+  assert.equal(matchesCategory(infantil, category), false);
+});
+
 test('aplica janela de descanso e limites conservadores de segurança', () => {
   const safety = normalizeSafety({ maxPerHour: 999, maxPerDay: -1, quietStartHour: 22, quietEndHour: 8 });
   assert.equal(safety.maxPerHour, 20);
