@@ -12,7 +12,7 @@ test('normaliza e seleciona apenas uma oferta nova que atende aos filtros', () =
   ] } });
   const selected = selectOffers(offers, { minDiscount: 20, minPrice: 20, maxPrice: 80, maxOffers: 5 }, new Set());
   assert.equal(selected.length, 1);
-  assert.match(formatOffer(selected[0]), /50% OFF/);
+  assert.match(formatOffer(selected[0]), /50% DE DESCONTO/);
 });
 
 test('usa o desconto e o cupom apenas quando esses dados vierem da Shopee', () => {
@@ -21,7 +21,7 @@ test('usa o desconto e o cupom apenas quando esses dados vierem da Shopee', () =
   ] } });
   assert.equal(offer.discount, 35);
   assert.equal(offer.couponCode, 'GANHE10');
-  assert.match(formatOffer(offer), /35% OFF/);
+  assert.match(formatOffer(offer), /35% DE DESCONTO/);
   assert.match(formatOffer(offer), /USE O CUPOM:.*GANHE10/);
 });
 
@@ -31,7 +31,9 @@ test('exibe preço anterior riscado ao receber percentual oficial de desconto', 
   ] } });
   assert.equal(offer.originalPrice, 100);
   assert.match(formatOffer(offer), /~De: R\$\s?100,00~/);
-  assert.match(formatOffer(offer), /POR R\$\s?70,00/);
+  assert.match(formatOffer(offer), /Por: R\$\s?70,00/);
+  assert.match(formatOffer(offer), /ESSE ACHADO É PRA VOCÊ MESMA/);
+  assert.match(formatOffer(offer), /Compre aqui:/);
 });
 
 test('destaca oferta relâmpago ativa com a validade fornecida pela Shopee', () => {

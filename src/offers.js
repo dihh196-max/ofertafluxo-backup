@@ -117,14 +117,13 @@ const brl = value => new Intl.NumberFormat('pt-BR', { style: 'currency', currenc
 
 export function formatOffer(offer, campaign = null) {
   const before = offer.originalPrice > offer.price ? `\n~De: ${brl(offer.originalPrice)}~` : '';
-  const discount = offer.discount ? `🔥 *${offer.discount}% OFF*\n` : '💥 *OFERTA ESPECIAL*\n';
-  const savings = offer.originalPrice > offer.price ? `💰 Economia de ${brl(offer.originalPrice - offer.price)}\n` : '';
-  const couponLine = offer.couponCode ? `\n🏷️ *USE O CUPOM:* \`${offer.couponCode}\`\n` : '';
+  const discount = offer.discount ? `😱🔻 *${offer.discount}% DE DESCONTO*` : '💥 *OFERTA ESPECIAL*';
+  const couponLine = offer.couponCode ? `\n🏷️ *USE O CUPOM:* \`${offer.couponCode}\`` : '';
   const campaignLabel = offer.campaignLabel || campaign?.label;
   const campaignLine = campaignLabel ? `\n🏷️ *${campaignLabel}*` : '';
   const endsAt = offer.flashEndsAt ? new Date(offer.flashEndsAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
   const flashHeader = offer.flash
-    ? `⚡ *OFERTA RELÂMPAGO SHOPEE* ⚡\n${endsAt ? `⏳ *Válida até ${endsAt}*\n` : '⏳ *Aproveite enquanto estiver disponível*\n'}\n`
+    ? `⚡ *OFERTA RELÂMPAGO SHOPEE*${endsAt ? ` — *Válida até ${endsAt}*` : ''}\n`
     : '';
-  return `${flashHeader}🛍️ *${offer.title}*${before}\n\n${discount}${savings}❤️ *POR ${brl(offer.price)}*${couponLine}${campaignLine}\n\n🛒 *LINK PROMOCIONAL:* ${offer.url}\n\n⚠️ *Promoção sujeita à alteração de preço e estoque no site.*`;
+  return `ESSE ACHADO É PRA VOCÊ MESMA 🎯✨👇\n${flashHeader}🛍️ *QUEIMA DE ESTOQUE!!!* ${offer.title}\n${discount}${before}\n💥 *Por: ${brl(offer.price)}*${couponLine}${campaignLine}\n🛒 *Compre aqui:* ${offer.url}\n⚠️ *Promoção sujeita à alteração de preço e estoque do site.*`;
 }
