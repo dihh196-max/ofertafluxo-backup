@@ -27,6 +27,15 @@ test('não repete o mesmo produto quando a Shopee devolve IDs ou links diferente
   assert.equal(selectOffers(offers, { minDiscount: 10, minPrice: 0, maxPrice: 200, maxOffers: 5 }, alreadySent).length, 1);
 });
 
+test('intercala famílias de produtos quando há alternativas disponíveis', () => {
+  const brasAndDress = [
+    { id: 'bra-1', title: 'Sutiã feminino renda', url: 'https://s.shopee.com.br/bra-1', image: 'https://cdn/bra-1.jpg', price: 45, discount: 30, commissionRate: 0.3, rating: 5, sales: 2 },
+    { id: 'dress-1', title: 'Vestido feminino midi', url: 'https://s.shopee.com.br/dress-1', image: 'https://cdn/dress-1.jpg', price: 55, discount: 25, commissionRate: 0.2, rating: 4.8, sales: 4 }
+  ];
+  const selected = selectOffers(brasAndDress, { minDiscount: 0, minPrice: 0, maxPrice: 100, maxOffers: 1 }, new Set(), ['lingerie-sutia']);
+  assert.equal(selected[0].id, 'dress-1');
+});
+
 test('usa o desconto e o cupom apenas quando esses dados vierem da Shopee', () => {
   const [offer] = normalizeOffers({ productOfferV2: { nodes: [
     { itemId: 5, productName: 'Blusa', offerLink: 'https://s.shopee.com.br/c', priceMin: 39.9, priceDiscountRate: 35, couponCode: 'GANHE10' }

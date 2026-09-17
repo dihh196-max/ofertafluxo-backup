@@ -1,6 +1,6 @@
 import { getShopeeOffers } from './shopee.js';
 import { formatOffer, markTimeLimitedFlash, normalizeOffers, selectOffers, uniqueOffers } from './offers.js';
-import { readSentIds, rememberSent } from './store.js';
+import { readRecentVarietyGroups, readSentIds, rememberSent } from './store.js';
 import { sendWhatsAppOffer } from './whatsapp.js';
 import { sendEvolutionOffer } from './evolution.js';
 import { sendDirectWhatsAppOffer } from './whatsapp-direct.js';
@@ -45,6 +45,7 @@ export async function run(settings, destinationIds = null) {
   const jobs = destinations.map(async destination => {
     const category = categoryById(destination.categoryId);
     const sentIds = readSentIds(settings.userId, destination.id);
+    const recentVarietyGroups = readRecentVarietyGroups(settings.userId, destination.id);
     // Os horários oficiais do próprio produto são a única fonte usada para
     // marcar uma oferta relâmpago. A API de campanhas é uma landing page e
     // não fornece preço por item, portanto não é usada para inventar preços.
@@ -53,7 +54,7 @@ export async function run(settings, destinationIds = null) {
     const flashIds = new Set(flashOffers.map(item => item.id));
     const normalOffers = categorizedOffers.filter(item => !flashIds.has(item.id));
     const preferredKind = destination.nextOfferKind === 'normal' ? 'normal' : 'flash';
-    const pick = list => selectOffers(list, { ...settings.filters, maxOffers: 1 }, sentIds)[0];
+    const pick = list => selectOffers(list, { ...settings.filters, maxOffers: 1 }, sentIds, recentVarietyGroups)[0];
     // A alternância é por grupo. Se não existir relâmpago válida no nicho,
     // envia a normal disponível e tenta uma relâmpago novamente na próxima vez.
     const preferred = preferredKind === 'flash' ? flashOffers : normalOffers;

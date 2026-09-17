@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { offerDedupKeys } from './offers.js';
+import { offerDedupKeys, offerVarietyGroup } from './offers.js';
 
 const fileFor = userId => path.resolve('data/users', String(userId), 'sent-offers.json');
 const RECENT_SENT_DAYS = 14;
@@ -22,6 +22,18 @@ export function readSentIds(userId, destinationId) {
     .filter(Boolean));
 }
 
+export function readRecentVarietyGroups(userId, destinationId, limit = 3) {
+  const file = fileFor(userId);
+  if (!fs.existsSync(file)) return [];
+  const cutoff = Date.now() - RECENT_SENT_DAYS * 24 * 60 * 60 * 1000;
+  const entries = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return entries.slice().reverse()
+    .filter(entry => entry.destinationId === destinationId && Date.parse(entry.sentAt || entry.at || '') >= cutoff)
+    .map(entry => entry.varietyGroup)
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 export function rememberSent(userId, records) {
   const file = fileFor(userId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -32,6 +44,7 @@ export function rememberSent(userId, records) {
     return {
       id: offer.id,
       dedupKeys: offerDedupKeys(offer),
+      varietyGroup: offerVarietyGroup(offer),
       destinationId: record.destinationId || null,
       categoryId: record.categoryId || null,
       sentAt: now

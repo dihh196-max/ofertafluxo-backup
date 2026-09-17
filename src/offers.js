@@ -118,6 +118,30 @@ export function offerAlreadySeen(offer, seenKeys) {
   return offerDedupKeys(offer).some(key => seenKeys.has(key));
 }
 
+// Família editorial usada para alternar o tipo de produto enviado a cada
+// grupo. Não é uma categoria da Shopee e não altera a elegibilidade do item.
+export function offerVarietyGroup(offer) {
+  const title = normalizedText(offer?.title);
+  const contains = value => title.includes(value);
+  if (contains('conjunto lingerie')) return 'lingerie-conjunto';
+  if (contains('sutia')) return 'lingerie-sutia';
+  if (contains('calcinha')) return 'lingerie-calcinha';
+  if (contains('camisola') || contains('baby doll') || contains('babydoll')) return 'lingerie-noite';
+  if (contains('lingerie') || contains('body renda')) return 'lingerie';
+  if (contains('vestido')) return 'roupa-vestido';
+  if (contains('conjunto')) return 'roupa-conjunto';
+  if (contains('blusa') || contains('cropped')) return 'roupa-blusa';
+  if (contains('calca') || contains('pantalona')) return 'roupa-calca';
+  if (contains('short')) return 'roupa-short';
+  if (contains('saia')) return 'roupa-saia';
+  if (contains('tenis')) return 'calcado-tenis';
+  if (contains('sapatilha')) return 'calcado-sapatilha';
+  if (contains('rasteirinha')) return 'calcado-rasteirinha';
+  if (contains('tamanco') || contains('slide')) return 'calcado-tamanco-slide';
+  if (contains('scarpin') || contains('salto')) return 'calcado-salto';
+  return `produto-${title.split(' ').slice(0, 2).join('-') || 'geral'}`;
+}
+
 export function uniqueOffers(offers) {
   const seen = new Set();
   return offers.filter(offer => {
@@ -144,17 +168,22 @@ export function markTimeLimitedFlash(offer, now = Date.now()) {
   return active && shortWindow ? { ...offer, flash: true } : offer;
 }
 
-export function selectOffers(offers, filters, sentIds) {
+export function selectOffers(offers, filters, sentIds, recentVarietyGroups = []) {
   const preferredMaxPrice = Number(filters.preferredMaxPrice || 0);
   const priceTier = offer => preferredMaxPrice > 0 && offer.price <= preferredMaxPrice ? 0 : 1;
-  return offers
+  const ranked = offers
     .filter(offer => !offerAlreadySeen(offer, sentIds))
     // Algumas listas da Shopee não retornam preço anterior/desconto. Não as descartamos
     // apenas por esse campo não existir; quando há desconto informado, o filtro é aplicado.
     .filter(offer => offer.discount === null || offer.discount >= filters.minDiscount)
     .filter(offer => offer.price >= filters.minPrice && offer.price <= filters.maxPrice)
-    .sort((a, b) => priceTier(a) - priceTier(b) || b.commissionRate - a.commissionRate || b.rating - a.rating || b.sales - a.sales || a.price - b.price || (b.discount || 0) - (a.discount || 0))
-    .slice(0, filters.maxOffers);
+    .sort((a, b) => priceTier(a) - priceTier(b) || b.commissionRate - a.commissionRate || b.rating - a.rating || b.sales - a.sales || a.price - b.price || (b.discount || 0) - (a.discount || 0));
+  const recent = new Set(recentVarietyGroups.filter(Boolean));
+  const alternatives = ranked.filter(offer => !recent.has(offerVarietyGroup(offer)));
+  // Caso não exista outra família elegível, mantém o catálogo funcionando
+  // sem enviar um item repetido ou travar a programação do grupo.
+  const ordered = [...alternatives, ...ranked.filter(offer => recent.has(offerVarietyGroup(offer)))];
+  return ordered.slice(0, filters.maxOffers);
 }
 
 const brl = value => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
