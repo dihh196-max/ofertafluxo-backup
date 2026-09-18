@@ -358,7 +358,7 @@ http.createServer(async (request, response) => {
       const input = await readBody(request); const saved = loadSettings(base, user.id);
       saved.shopee.appId = String(input.appId || saved.shopee.appId || '').trim();
       if (input.secret) saved.shopee.secret = String(input.secret).trim();
-      const filters = { ...saved.filters, minDiscount: Number(input.minDiscount ?? saved.filters.minDiscount), minPrice: Number(input.minPrice ?? saved.filters.minPrice), maxPrice: Number(input.maxPrice ?? saved.filters.maxPrice), maxOffers: Number(input.maxOffers ?? saved.filters.maxOffers), preferredMaxPrice: Number(input.preferredMaxPrice ?? saved.filters.preferredMaxPrice) };
+      const filters = { ...saved.filters, minDiscount: Number(input.minDiscount ?? saved.filters.minDiscount), minPrice: Number(input.minPrice ?? saved.filters.minPrice), maxPrice: Number(input.maxPrice ?? saved.filters.maxPrice), maxOffers: Number(input.maxOffers ?? saved.filters.maxOffers), preferredMaxPrice: Number(input.preferredMaxPrice ?? saved.filters.preferredMaxPrice), preferOfficialVideo: typeof input.preferOfficialVideo === 'boolean' ? input.preferOfficialVideo : saved.filters.preferOfficialVideo !== false };
       if (!Number.isFinite(filters.minPrice) || !Number.isFinite(filters.maxPrice) || filters.minPrice < 0 || filters.maxPrice < filters.minPrice) throw new Error('Defina uma faixa de preço válida.');
       saved.filters = filters;
       saveSettings(user.id, saved); saveLog(user, 'info', 'Integração Shopee atualizada');

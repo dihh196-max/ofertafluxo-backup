@@ -78,7 +78,7 @@ export async function run(settings, destinationIds = null) {
     const reservation = reserveDelivery(settings.userId, destination, settings.safety);
     try {
       await queueDelivery(async () => {
-        if (settings.directWhatsApp?.enabled) return sendDirectWhatsAppOffer(settings.userId, offer, text, [destination.number]);
+        if (settings.directWhatsApp?.enabled) return sendDirectWhatsAppOffer(settings.userId, offer, text, [destination.number], { preferOfficialVideo: settings.filters.preferOfficialVideo });
         if (settings.evolution?.enabled) return sendEvolutionOffer(text, { ...settings.evolution, targets: [destination.number] });
         return sendWhatsAppOffer(text, { ...settings.whatsapp, recipients: [destination.number] });
       }, settings.safety);

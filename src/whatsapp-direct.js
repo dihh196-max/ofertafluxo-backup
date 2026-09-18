@@ -130,14 +130,16 @@ export async function connectDirectWhatsApp(userId, { forceNewQr = false } = {})
   });
   return directWhatsAppState(userId);
 }
-export async function sendDirectWhatsAppOffer(userId, offer, text, targets) {
+export async function sendDirectWhatsAppOffer(userId, offer, text, targets, { preferOfficialVideo = true } = {}) {
   const direct = directFor(userId);
   if (!direct.socket || direct.status !== 'conectado') throw new Error('Conecte o WhatsApp pelo QR Code antes de enviar.');
   if (!targets?.length) throw new Error('Adicione ao menos um destino ativo.');
   const results = [];
   for (const target of targets) {
     const jid = target.includes('@') ? target : `${target}@s.whatsapp.net`;
-    const content = offer.image ? { image: { url: offer.image }, caption: text } : { text, linkPreview: true };
+    const content = preferOfficialVideo && offer.officialVideoUrl
+      ? { video: { url: offer.officialVideoUrl }, caption: text }
+      : offer.image ? { image: { url: offer.image }, caption: text } : { text, linkPreview: true };
     results.push(await direct.socket.sendMessage(jid, content));
     await new Promise(resolve => setTimeout(resolve, 1500));
   }

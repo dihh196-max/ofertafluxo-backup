@@ -15,6 +15,15 @@ test('normaliza e seleciona apenas uma oferta nova que atende aos filtros', () =
   assert.match(formatOffer(selected[0]), /50% DE DESCONTO/);
 });
 
+test('aceita somente URL de vídeo retornada pela resposta oficial da Shopee', () => {
+  const [withVideo, withoutVideo] = normalizeOffers({ productOfferV2: { nodes: [
+    { itemId: 71, productName: 'Vestido com vídeo', offerLink: 'https://s.shopee.com.br/71', price: 70, videoUrl: 'https://official.shopee.com/video.mp4' },
+    { itemId: 72, productName: 'Vestido sem vídeo', offerLink: 'https://s.shopee.com.br/72', price: 80 }
+  ] } });
+  assert.equal(withVideo.officialVideoUrl, 'https://official.shopee.com/video.mp4');
+  assert.equal(withoutVideo.officialVideoUrl, '');
+});
+
 test('não repete o mesmo produto quando a Shopee devolve IDs ou links diferentes', () => {
   const common = { title: 'Kit 3 Vestidos Midi Canelado', image: 'https://cf.shopee.com.br/file/vestido.jpg?cache=1', price: 60, originalPrice: 100, discount: 40, commissionRate: 0.1, rating: 5, sales: 4 };
   const offers = uniqueOffers([

@@ -220,6 +220,7 @@ function openShopee() {
   $('#max-price').value = state.filters?.maxPrice ?? 1000;
   $('#preferred-max-price').value = state.filters?.preferredMaxPrice ?? 80;
   $('#max-offers').value = state.filters?.maxOffers ?? 5;
+  $('#prefer-official-video').checked = state.filters?.preferOfficialVideo !== false;
   $('#shopee-dialog').showModal();
 }
 async function loadOffers() {
@@ -228,7 +229,7 @@ async function loadOffers() {
   try {
     const { offers, category } = await api('/api/offers/preview', { method: 'POST', body: JSON.stringify({ categoryId: $('#preview-category').value }) });
     $('#offers-message').textContent = offers.length ? `${offers.length} ofertas encontradas em ${category}.` : `Nenhuma oferta encontrada em ${category}.`;
-    $('#offers-grid').innerHTML = offers.map(offer => `<article class="card offer"><div class="offer-img">${offer.image ? `<img src="${escapeHtml(offer.image)}" alt="">` : '◈'}</div><div class="offer-info">${offer.flash ? '<div class="flash-badge">⚡ Oferta relâmpago</div>' : ''}<h3>${escapeHtml(offer.title)}</h3><div class="offer-price">${money(offer.price)}</div><div class="offer-meta"><span>${offer.shop ? escapeHtml(offer.shop) : 'Shopee'}</span><span>${offer.sales ? `${offer.sales} vendidos` : 'Sem vendas'}</span></div><div class="commission">Comissão: ${(Number(offer.commissionRate || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</div><a href="${escapeHtml(offer.url)}" target="_blank" rel="noopener">Ver oferta →</a></div></article>`).join('');
+    $('#offers-grid').innerHTML = offers.map(offer => `<article class="card offer"><div class="offer-img">${offer.image ? `<img src="${escapeHtml(offer.image)}" alt="">` : '◈'}</div><div class="offer-info">${offer.flash ? '<div class="flash-badge">⚡ Oferta relâmpago</div>' : ''}${offer.officialVideoUrl ? '<div class="flash-badge">🎬 Vídeo oficial disponível</div>' : '<div class="offer-meta">🖼️ Sem vídeo oficial</div>'}<h3>${escapeHtml(offer.title)}</h3><div class="offer-price">${money(offer.price)}</div><div class="offer-meta"><span>${offer.shop ? escapeHtml(offer.shop) : 'Shopee'}</span><span>${offer.sales ? `${offer.sales} vendidos` : 'Sem vendas'}</span></div><div class="commission">Comissão: ${(Number(offer.commissionRate || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</div><a href="${escapeHtml(offer.url)}" target="_blank" rel="noopener">Ver oferta →</a></div></article>`).join('');
     await reload();
   } catch (error) { $('#offers-message').textContent = error.message; toast(error.message, true); }
   finally { button.disabled = false; button.textContent = 'Buscar ofertas'; }
@@ -277,7 +278,7 @@ document.addEventListener('change', async event => {
 });
 $('#load-offers').addEventListener('click', loadOffers);
 $('#save-shopee').addEventListener('click', async () => { try {
-  await api('/api/config/shopee', { method: 'POST', body: JSON.stringify({ appId: $('#shopee-app-id').value, secret: $('#shopee-secret').value, minDiscount: $('#min-discount').value, minPrice: $('#min-price').value, maxPrice: $('#max-price').value, preferredMaxPrice: $('#preferred-max-price').value, maxOffers: $('#max-offers').value }) });
+  await api('/api/config/shopee', { method: 'POST', body: JSON.stringify({ appId: $('#shopee-app-id').value, secret: $('#shopee-secret').value, minDiscount: $('#min-discount').value, minPrice: $('#min-price').value, maxPrice: $('#max-price').value, preferredMaxPrice: $('#preferred-max-price').value, maxOffers: $('#max-offers').value, preferOfficialVideo: $('#prefer-official-video').checked }) });
   $('#shopee-dialog').close(); await reload(); toast('Integração Shopee salva.');
 } catch (error) { toast(error.message, true); } });
 $('#save-whatsapp').addEventListener('click', async () => { try {

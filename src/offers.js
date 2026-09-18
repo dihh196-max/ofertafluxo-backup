@@ -45,6 +45,17 @@ function locateList(data) {
   return [];
 }
 
+function officialVideoUrl(raw) {
+  const values = [
+    raw.videoUrl, raw.videoURL, raw.video?.url, raw.video?.playUrl,
+    raw.productVideo?.url, raw.productVideo?.playUrl,
+    ...(Array.isArray(raw.videoUrls) ? raw.videoUrls : []),
+    ...(Array.isArray(raw.videos) ? raw.videos.map(video => video?.url ?? video?.playUrl) : []),
+    ...(Array.isArray(raw.media?.videos) ? raw.media.videos.map(video => video?.url ?? video?.playUrl) : [])
+  ];
+  return values.map(value => String(value || '').trim()).find(value => /^https:\/\//i.test(value)) || '';
+}
+
 export function normalizeOffers(data, { flash = false } = {}) {
   return locateList(data).map(raw => {
     const price = number(raw.price ?? raw.priceMin ?? raw.priceInfo?.price);
@@ -72,6 +83,9 @@ export function normalizeOffers(data, { flash = false } = {}) {
       originalPrice,
       discount,
       image: raw.imageUrl ?? raw.image,
+      // Só aceita URL retornada na própria resposta oficial da Open API. Não
+      // consulta páginas, não faz scraping e não usa mídia de terceiros.
+      officialVideoUrl: officialVideoUrl(raw),
       sales: number(raw.sales ?? raw.sold ?? raw.soldCount),
       shop: raw.shopName,
       commission: raw.commission,

@@ -10,7 +10,7 @@ const activityPath = userId => path.join(userDir(userId), 'activity.json');
 
 export const defaultSettings = {
   shopee: { appId: '', secret: '' },
-  filters: { minDiscount: 15, minPrice: 0, maxPrice: 1000, maxOffers: 5, preferredMaxPrice: 80 },
+  filters: { minDiscount: 15, minPrice: 0, maxPrice: 1000, maxOffers: 5, preferredMaxPrice: 80, preferOfficialVideo: true },
   automation: { enabled: false, intervalMinutes: 60, lastRunAt: null, destinationSchedule: {} },
   communityContent: { enabled: true, sentSlots: {}, retryAfter: {} },
   videoScout: defaultVideoScout,
